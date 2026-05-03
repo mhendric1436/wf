@@ -1,5 +1,6 @@
 #pragma once
 
+#include "wf/json.hpp"
 #include "wf/store/workflow_definition_store.hpp"
 #include "wf/store/workflow_execution_store.hpp"
 #include "wf/workflow_execution.hpp"
@@ -36,6 +37,12 @@ class WorkflowOrchestrator
         const std::string& stepName,
         const std::string& reason
     );
+
+    WorkflowDefinitionStore& workflowDefinitionStore();
+    const WorkflowDefinitionStore& workflowDefinitionStore() const;
+
+    WorkflowExecutionStore& workflowExecutionStore();
+    const WorkflowExecutionStore& workflowExecutionStore() const;
 
   private:
     WorkflowDefinitionStore& definitionStore_;

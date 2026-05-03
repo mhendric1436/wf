@@ -244,4 +244,20 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     return execution;
 }
 
+WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() {
+    return definitionStore_;
+}
+
+const WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() const {
+    return definitionStore_;
+}
+
+WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() {
+    return executionStore_;
+}
+
+const WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() const {
+    return executionStore_;
+}
+
 } // namespace workflow

@@ -1,14 +1,64 @@
-namespace workflow
-{
-namespace
-{
+#include "wf/workflow_service.hpp"
 
-// Placeholder for the future API/service layer.
-//
-// The current project has parser/validator and orchestration framework types.
-// Once the HTTP API surface is finalized, this file can implement a WorkflowService
-// facade that binds definition management and execution orchestration together.
-[[maybe_unused]] constexpr int workflow_service_translation_unit_anchor = 0;
+namespace workflow {
 
-} // namespace
+WorkflowService::WorkflowService(WorkflowOrchestrator& orchestrator)
+    : orchestrator_(orchestrator) {}
+
+ValidateWorkflowDefinitionResponse WorkflowService::validateWorkflowDefinition(
+    const ValidateWorkflowDefinitionRequest& request
+) const {
+    return ValidateWorkflowDefinitionResponse{
+        .validation = validateWorkflowJson(request.definitionJson),
+    };
+}
+
+RegisterWorkflowDefinitionResponse WorkflowService::registerWorkflowDefinition(
+    const RegisterWorkflowDefinitionRequest& request
+) {
+    WorkflowDefinition definition = parseWorkflowDefinition(request.definitionJson);
+
+    orchestrator_.workflowDefinitionStore().save(definition);
+
+    return RegisterWorkflowDefinitionResponse{
+        .definition = definition,
+    };
+}
+
+StartWorkflowExecutionResponse WorkflowService::startWorkflowExecution(
+    const StartWorkflowExecutionRequest& request
+) {
+    return StartWorkflowExecutionResponse{
+        .execution = orchestrator_.startWorkflow(
+            request.workflowName,
+            request.workflowVersion,
+            request.input
+        ),
+    };
+}
+
+CompleteWorkflowStepResponse WorkflowService::completeWorkflowStep(
+    const CompleteWorkflowStepRequest& request
+) {
+    return CompleteWorkflowStepResponse{
+        .execution = orchestrator_.completeStep(
+            request.workflowExecutionId,
+            request.stepName,
+            request.stepOutput
+        ),
+    };
+}
+
+FailWorkflowStepResponse WorkflowService::failWorkflowStep(
+    const FailWorkflowStepRequest& request
+) {
+    return FailWorkflowStepResponse{
+        .execution = orchestrator_.failStep(
+            request.workflowExecutionId,
+            request.stepName,
+            request.reason
+        ),
+    };
+}
+
 } // namespace workflow
