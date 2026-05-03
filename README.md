@@ -1,3 +1,4 @@
+![wf logo and project overview](images/wf.png)
 # wf
 
 `wf` is a C++20 workflow definition parser, validator, and workflow service framework.
