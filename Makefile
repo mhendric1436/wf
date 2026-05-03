@@ -8,34 +8,52 @@ BUILD_DIR := build
 OBJ_DIR := $(BUILD_DIR)/obj
 BIN_DIR := $(BUILD_DIR)/bin
 
-LIB_NAME := libworkflow_parser.a
-TEST_BIN := $(BIN_DIR)/workflow_parser_tests
+LIB_NAME := libwf.a
+LIB := $(BUILD_DIR)/$(LIB_NAME)
+
+TEST_BIN := $(BIN_DIR)/wf_tests
 
 SRC := \
 	src/json.cpp \
-	src/workflow_parser.cpp
+	src/workflow_parser.cpp \
+	src/workflow_definition_store.cpp \
+	src/workflow_execution_store.cpp \
+	src/workflow_orchestrator.cpp \
+	src/workflow_service.cpp
 
 OBJ := $(patsubst src/%.cpp,$(OBJ_DIR)/src/%.o,$(SRC))
 
-TEST_SRC := tests/workflow_parser_tests.cpp
+TEST_SRC := \
+	tests/workflow_parser_tests.cpp
+
 TEST_OBJ := $(patsubst tests/%.cpp,$(OBJ_DIR)/tests/%.o,$(TEST_SRC))
 
 CATCH_SRC := third_party/catch2/catch_amalgamated.cpp
 CATCH_OBJ := $(OBJ_DIR)/third_party/catch2/catch_amalgamated.o
 
-LIB := $(BUILD_DIR)/$(LIB_NAME)
-
 FORMAT_FILES := \
 	include/wf/json.hpp \
 	include/wf/workflow_definition.hpp \
 	include/wf/workflow_parser.hpp \
+	include/wf/workflow_definition_store.hpp \
+	include/wf/workflow_execution.hpp \
+	include/wf/workflow_execution_store.hpp \
+	include/wf/workflow_logic.hpp \
+	include/wf/workflow_orchestrator.hpp \
+	include/wf/workflow_service.hpp \
 	src/json.cpp \
 	src/workflow_parser.cpp \
+	src/workflow_definition_store.cpp \
+	src/workflow_execution_store.cpp \
+	src/workflow_orchestrator.cpp \
+	src/workflow_service.cpp \
 	tests/workflow_parser_tests.cpp
 
-.PHONY: all test format format-check clean help
+.PHONY: all build test format format-check clean help
 
 all: test
+
+build: $(LIB)
 
 $(LIB): $(OBJ)
 	@mkdir -p $(dir $@)
@@ -72,8 +90,9 @@ clean:
 help:
 	@echo "Targets:"
 	@echo "  make              Build and run tests"
+	@echo "  make build        Build static library only"
 	@echo "  make test         Build and run tests"
-	@echo "  make format       Format source files with clang-format"
+	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
 	@echo "  make clean        Remove build outputs"
 	@echo ""
