@@ -21,15 +21,17 @@ TEST_BIN := $(BIN_DIR)/wf_tests
 SRC := \
 	src/json.cpp \
 	src/workflow_parser.cpp \
-	src/workflow_definition_store.cpp \
-	src/workflow_execution_store.cpp \
 	src/workflow_orchestrator.cpp \
-	src/workflow_service.cpp
+	src/workflow_service.cpp \
+	src/backend/memory/in_memory_workflow_definition_store.cpp \
+	src/backend/memory/in_memory_workflow_execution_store.cpp
 
 OBJ := $(patsubst src/%.cpp,$(OBJ_DIR)/src/%.o,$(SRC))
 
 TEST_SRC := \
-	tests/workflow_parser_tests.cpp
+	tests/workflow_parser_tests.cpp \
+	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
+	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp
 
 TEST_OBJ := $(patsubst tests/%.cpp,$(OBJ_DIR)/tests/%.o,$(TEST_SRC))
 
@@ -40,19 +42,23 @@ FORMAT_FILES := \
 	include/wf/json.hpp \
 	include/wf/workflow_definition.hpp \
 	include/wf/workflow_parser.hpp \
-	include/wf/workflow_definition_store.hpp \
 	include/wf/workflow_execution.hpp \
-	include/wf/workflow_execution_store.hpp \
 	include/wf/workflow_logic.hpp \
 	include/wf/workflow_orchestrator.hpp \
 	include/wf/workflow_service.hpp \
+	include/wf/store/workflow_definition_store.hpp \
+	include/wf/store/workflow_execution_store.hpp \
+	include/wf/backend/memory/in_memory_workflow_definition_store.hpp \
+	include/wf/backend/memory/in_memory_workflow_execution_store.hpp \
 	src/json.cpp \
 	src/workflow_parser.cpp \
-	src/workflow_definition_store.cpp \
-	src/workflow_execution_store.cpp \
 	src/workflow_orchestrator.cpp \
 	src/workflow_service.cpp \
-	tests/workflow_parser_tests.cpp
+	src/backend/memory/in_memory_workflow_definition_store.cpp \
+	src/backend/memory/in_memory_workflow_execution_store.cpp \
+	tests/workflow_parser_tests.cpp \
+	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
+	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp
 
 .PHONY: all build test format format-check docs-png clean help
 

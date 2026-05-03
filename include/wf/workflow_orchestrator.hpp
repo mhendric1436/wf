@@ -1,8 +1,8 @@
 #pragma once
 
-#include "wf/workflow_definition_store.hpp"
+#include "wf/store/workflow_definition_store.hpp"
+#include "wf/store/workflow_execution_store.hpp"
 #include "wf/workflow_execution.hpp"
-#include "wf/workflow_execution_store.hpp"
 #include "wf/workflow_logic.hpp"
 
 #include <string>
