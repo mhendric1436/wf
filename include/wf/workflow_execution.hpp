@@ -5,23 +5,27 @@
 #include <optional>
 #include <string>
 
-namespace workflow {
+namespace workflow
+{
 
-enum class WorkflowExecutionStatus {
+enum class WorkflowExecutionStatus
+{
     Running,
     Completed,
     Failed,
     Canceled
 };
 
-enum class StepExecutionStatus {
+enum class StepExecutionStatus
+{
     Pending,
     Running,
     Completed,
     Failed
 };
 
-struct WorkflowExecution {
+struct WorkflowExecution
+{
     std::string workflowExecutionId;
     std::string workflowName;
     int workflowVersion;

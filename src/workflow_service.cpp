@@ -1,5 +1,7 @@
-namespace workflow {
-namespace {
+namespace workflow
+{
+namespace
+{
 
 // Placeholder for the future API/service layer.
 //

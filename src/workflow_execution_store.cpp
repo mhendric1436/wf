@@ -1,7 +1,9 @@
 #include "wf/workflow_execution_store.hpp"
 
-namespace workflow {
-namespace {
+namespace workflow
+{
+namespace
+{
 
 // WorkflowExecutionStore is currently an interface-only abstraction.
 // Concrete implementations, such as InMemoryWorkflowExecutionStore or a persistent

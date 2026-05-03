@@ -7,9 +7,11 @@
 
 #include <string>
 
-namespace workflow {
+namespace workflow
+{
 
-class WorkflowOrchestrator {
+class WorkflowOrchestrator
+{
   public:
     WorkflowOrchestrator(
         WorkflowDefinitionStore& definitionStore,

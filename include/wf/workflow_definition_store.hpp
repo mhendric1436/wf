@@ -6,14 +6,17 @@
 #include <string>
 #include <vector>
 
-namespace workflow {
+namespace workflow
+{
 
-struct WorkflowDefinitionKey {
+struct WorkflowDefinitionKey
+{
     std::string workflowName;
     int workflowVersion;
 };
 
-class WorkflowDefinitionStore {
+class WorkflowDefinitionStore
+{
   public:
     virtual ~WorkflowDefinitionStore() = default;
 

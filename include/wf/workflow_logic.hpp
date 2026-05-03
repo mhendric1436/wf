@@ -5,9 +5,11 @@
 #include <optional>
 #include <string>
 
-namespace workflow {
+namespace workflow
+{
 
-struct StepCompletionContext {
+struct StepCompletionContext
+{
     std::string workflowName;
     int workflowVersion;
     std::string workflowExecutionId;
@@ -17,19 +19,19 @@ struct StepCompletionContext {
     json::Value stepOutput;
 };
 
-struct NextStepDecision {
+struct NextStepDecision
+{
     bool workflowComplete = false;
     std::optional<std::string> nextStepName;
     json::Value updatedState = json::Value::object();
 };
 
-class WorkflowLogic {
+class WorkflowLogic
+{
   public:
     virtual ~WorkflowLogic() = default;
 
-    virtual NextStepDecision decideNextStep(
-        const StepCompletionContext& context
-    ) = 0;
+    virtual NextStepDecision decideNextStep(const StepCompletionContext& context) = 0;
 };
 
 } // namespace workflow

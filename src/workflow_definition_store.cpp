@@ -1,7 +1,9 @@
 #include "wf/workflow_definition_store.hpp"
 
-namespace workflow {
-namespace {
+namespace workflow
+{
+namespace
+{
 
 // WorkflowDefinitionStore is currently an interface-only abstraction.
 // Concrete implementations, such as InMemoryWorkflowDefinitionStore or a persistent

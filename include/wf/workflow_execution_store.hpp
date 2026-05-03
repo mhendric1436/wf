@@ -5,17 +5,17 @@
 #include <optional>
 #include <string>
 
-namespace workflow {
+namespace workflow
+{
 
-class WorkflowExecutionStore {
+class WorkflowExecutionStore
+{
   public:
     virtual ~WorkflowExecutionStore() = default;
 
     virtual void save(const WorkflowExecution& execution) = 0;
 
-    virtual std::optional<WorkflowExecution> find(
-        const std::string& workflowExecutionId
-    ) const = 0;
+    virtual std::optional<WorkflowExecution> find(const std::string& workflowExecutionId) const = 0;
 
     virtual void update(const WorkflowExecution& execution) = 0;
 };
