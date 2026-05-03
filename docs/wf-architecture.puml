@@ -1,0 +1,121 @@
+@startuml wf-architecture
+
+' Architecture diagram for the wf repository.
+' Render with: plantuml docs/wf-architecture.puml
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment center
+skinparam wrapWidth 220
+skinparam maxMessageSize 220
+
+title wf Repository Architecture
+
+package "wf repo" {
+
+  package "include/wf" {
+    component "json.hpp\nworkflow::json::Value\nworkflow::json::parse" as JsonHpp
+    component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowStep" as DefinitionHpp
+    component "workflow_parser.hpp\nValidationResult\nvalidateWorkflowJson()\nparseWorkflowDefinition()" as ParserHpp
+    component "workflow_definition_store.hpp\nWorkflowDefinitionStore" as DefinitionStoreHpp
+    component "workflow_execution.hpp\nWorkflowExecution\nExecution Status Types" as ExecutionHpp
+    component "workflow_execution_store.hpp\nWorkflowExecutionStore" as ExecutionStoreHpp
+    component "workflow_logic.hpp\nWorkflowLogic\nNextStepDecision" as LogicHpp
+    component "workflow_orchestrator.hpp\nWorkflowOrchestrator" as OrchestratorHpp
+    component "workflow_service.hpp\nWorkflowService\nRequest/Response DTOs" as ServiceHpp
+  }
+
+  package "src" {
+    component "json.cpp\nCustom recursive-descent JSON parser" as JsonCpp
+    component "workflow_parser.cpp\nDefinition validation and parsing" as ParserCpp
+    component "workflow_definition_store.cpp\nStore translation unit" as DefinitionStoreCpp
+    component "workflow_execution_store.cpp\nStore translation unit" as ExecutionStoreCpp
+    component "workflow_orchestrator.cpp\nExecution orchestration" as OrchestratorCpp
+    component "workflow_service.cpp\nService facade" as ServiceCpp
+  }
+
+  package "tests" {
+    component "workflow_parser_tests.cpp\nParser and validator tests" as ParserTests
+  }
+
+  package "third_party/catch2" {
+    component "catch_amalgamated.hpp/cpp\nUnit test framework" as Catch2
+  }
+
+  package "build tooling" {
+    component "Makefile\nclang++ build\nclang-format targets\nstatic library + tests" as Makefile
+    component ".clang-format" as ClangFormat
+    component ".gitignore" as GitIgnore
+  }
+}
+
+package "External / Future Boundary" {
+  component "HTTP API Layer\nFuture REST adapter" as HttpLayer
+  component "Workflow Business Logic\nProvides next-step decisions" as BusinessLogic
+  database "Future Persistent Store\nDefinitions + Executions" as PersistentStore
+}
+
+JsonCpp ..> JsonHpp : implements
+ParserCpp ..> ParserHpp : implements
+DefinitionStoreCpp ..> DefinitionStoreHpp : placeholder TU
+ExecutionStoreCpp ..> ExecutionStoreHpp : placeholder TU
+OrchestratorCpp ..> OrchestratorHpp : implements
+ServiceCpp ..> ServiceHpp : implements
+
+DefinitionHpp ..> JsonHpp : additional step fields
+ParserHpp ..> JsonHpp : validates JSON value
+ParserHpp ..> DefinitionHpp : produces model
+ParserCpp ..> JsonHpp : parses JSON text
+ParserCpp ..> DefinitionHpp : builds WorkflowDefinition
+
+ServiceHpp ..> ParserHpp : validate/register definitions
+ServiceHpp ..> DefinitionStoreHpp : save definitions
+ServiceHpp ..> OrchestratorHpp : start/complete/fail executions
+
+OrchestratorHpp ..> DefinitionStoreHpp : load definition
+OrchestratorHpp ..> ExecutionStoreHpp : persist execution state
+OrchestratorHpp ..> LogicHpp : ask for next step
+OrchestratorHpp ..> ExecutionHpp : returns execution
+
+LogicHpp ..> JsonHpp : input/state/output payloads
+ExecutionHpp ..> JsonHpp : input and state payloads
+
+ParserTests ..> ParserHpp : exercises
+ParserTests ..> JsonHpp : parses fixtures
+ParserTests ..> Catch2 : uses
+
+Makefile ..> JsonCpp : compiles
+Makefile ..> ParserCpp : compiles
+Makefile ..> DefinitionStoreCpp : compiles
+Makefile ..> ExecutionStoreCpp : compiles
+Makefile ..> OrchestratorCpp : compiles
+Makefile ..> ServiceCpp : compiles
+Makefile ..> ParserTests : builds test binary
+Makefile ..> ClangFormat : format targets
+
+HttpLayer ..> ServiceHpp : future API adapter
+BusinessLogic -up-|> LogicHpp : implements
+DefinitionStoreHpp <.. PersistentStore : future implementation
+ExecutionStoreHpp <.. PersistentStore : future implementation
+
+note right of ParserHpp
+Validation rules include:
+- required workflow fields
+- ISO-8601 duration strings
+- workflowVersion >= 1
+- non-empty steps
+- unique step names
+- startWorkflowStepName exists
+- no extra top-level fields
+- step-level additional fields allowed
+end note
+
+note right of LogicHpp
+Workflow definitions do not contain
+nextStep, service, or type.
+Business logic decides the next step
+at execution time.
+end note
+
+@enduml
