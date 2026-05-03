@@ -26,9 +26,9 @@ CATCH_OBJ := $(OBJ_DIR)/third_party/catch2/catch_amalgamated.o
 LIB := $(BUILD_DIR)/$(LIB_NAME)
 
 FORMAT_FILES := \
-	include/workflow/json.hpp \
-	include/workflow/workflow_definition.hpp \
-	include/workflow/workflow_parser.hpp \
+	include/wf/json.hpp \
+	include/wf/workflow_definition.hpp \
+	include/wf/workflow_parser.hpp \
 	src/json.cpp \
 	src/workflow_parser.cpp \
 	tests/workflow_parser_tests.cpp
