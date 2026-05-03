@@ -10,6 +10,9 @@ obj/
 *.dll
 *.exe
 
+# ctags outputs
+tags
+
 # Test outputs
 *.log
 
