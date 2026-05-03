@@ -74,7 +74,7 @@ wf/
 ├── .clang-format
 ├── .gitignore
 ├── include/
-│   └── workflow/
+│   └── wf/
 │       ├── json.hpp
 │       ├── workflow_definition.hpp
 │       └── workflow_parser.hpp
