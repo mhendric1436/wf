@@ -11,9 +11,6 @@ obj/
 *.exe
 
 # Test outputs
-Testing/
-CTestTestfile.cmake
-DartConfiguration.tcl
 *.log
 
 # Generated dependency files
