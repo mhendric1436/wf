@@ -1,4 +1,4 @@
-#include "workflow/workflow_parser.hpp"
+#include "wf/workflow_parser.hpp"
 
 #include <regex>
 #include <set>

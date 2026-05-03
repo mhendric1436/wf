@@ -1,7 +1,7 @@
 #pragma once
 
-#include "workflow/json.hpp"
-#include "workflow/workflow_definition.hpp"
+#include "wf/json.hpp"
+#include "wf/workflow_definition.hpp"
 
 #include <string>
 #include <vector>

@@ -1,6 +1,6 @@
 #include "catch2/catch_amalgamated.hpp"
-#include "workflow/json.hpp"
-#include "workflow/workflow_parser.hpp"
+#include "wf/json.hpp"
+#include "wf/workflow_parser.hpp"
 
 #include <stdexcept>
 #include <string>

@@ -69,17 +69,17 @@ Workflow transition logic is intentionally not modeled in the workflow definitio
 ## Repository Layout
 
 ```text
-workflow-definition/
+wf/
 ├── Makefile
 ├── .clang-format
 ├── .gitignore
 ├── include/
 │   └── workflow/
-│       ├── custom_json.hpp
+│       ├── json.hpp
 │       ├── workflow_definition.hpp
 │       └── workflow_parser.hpp
 ├── src/
-│   ├── custom_json.cpp
+│   ├── json.cpp
 │   └── workflow_parser.cpp
 ├── tests/
 │   └── workflow_parser_tests.cpp
