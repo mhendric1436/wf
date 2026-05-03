@@ -1,0 +1,66 @@
+# Build outputs
+build/
+out/
+bin/
+obj/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Test outputs
+Testing/
+CTestTestfile.cmake
+DartConfiguration.tcl
+*.log
+
+# Generated dependency files
+*.d
+*.dep
+
+# Coverage outputs
+*.gcda
+*.gcno
+*.gcov
+coverage/
+coverage.info
+lcov.info
+
+# clang tooling
+.cache/
+compile_commands.json
+.clangd/
+
+# Formatting / lint backups
+*.orig
+*.rej
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.cproject
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Third-party downloaded dependencies
+# Keep this commented out if you want to vendor Catch2 in the repo.
+# third_party/

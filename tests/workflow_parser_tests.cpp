@@ -1,5 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
-#include "workflow/custom_json.hpp"
+#include "workflow/json.hpp"
 #include "workflow/workflow_parser.hpp"
 
 #include <stdexcept>
