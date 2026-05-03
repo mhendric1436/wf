@@ -6,8 +6,10 @@
 #include <stdexcept>
 #include <string>
 
-namespace workflow {
-namespace {
+namespace workflow
+{
+namespace
+{
 
 const std::regex NAME_PATTERN("^[A-Za-z][A-Za-z0-9_-]*$");
 
@@ -21,22 +23,32 @@ const std::regex ISO_8601_DURATION_PATTERN(
     "(\\d+H)?"
     "(\\d+M)?"
     "(\\d+S)?"
-    ")?$");
+    ")?$"
+);
 
-bool isNonEmptyString(const json::Value& value) {
+bool isNonEmptyString(const json::Value& value)
+{
     return value.isString() && !value.asString().empty();
 }
 
-bool isValidName(const std::string& value) {
+bool isValidName(const std::string& value)
+{
     return std::regex_match(value, NAME_PATTERN);
 }
 
-bool isValidDuration(const std::string& value) {
+bool isValidDuration(const std::string& value)
+{
     return std::regex_match(value, ISO_8601_DURATION_PATTERN);
 }
 
-void requireObject(const json::Value& value, ValidationResult& result, const std::string& path) {
-    if (!value.isObject()) {
+void requireObject(
+    const json::Value& value,
+    ValidationResult& result,
+    const std::string& path
+)
+{
+    if (!value.isObject())
+    {
         result.addError(path + " must be an object");
     }
 }
@@ -46,8 +58,10 @@ void requireField(
     ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
-) {
-    if (!value.contains(fieldName)) {
+)
+{
+    if (!value.contains(fieldName))
+    {
         result.addError(path + "." + fieldName + " is required");
     }
 }
@@ -57,14 +71,17 @@ void validateRequiredStringField(
     ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
-) {
+)
+{
     requireField(value, result, fieldName, path);
 
-    if (!value.contains(fieldName)) {
+    if (!value.contains(fieldName))
+    {
         return;
     }
 
-    if (!isNonEmptyString(value.at(fieldName))) {
+    if (!isNonEmptyString(value.at(fieldName)))
+    {
         result.addError(path + "." + fieldName + " must be a non-empty string");
     }
 }
@@ -74,18 +91,20 @@ void validateRequiredNameField(
     ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
-) {
+)
+{
     validateRequiredStringField(value, result, fieldName, path);
 
-    if (!value.contains(fieldName) || !value.at(fieldName).isString()) {
+    if (!value.contains(fieldName) || !value.at(fieldName).isString())
+    {
         return;
     }
 
     const auto name = value.at(fieldName).asString();
 
-    if (!isValidName(name)) {
-        result.addError(path + "." + fieldName +
-                        " must match pattern ^[A-Za-z][A-Za-z0-9_-]*$");
+    if (!isValidName(name))
+    {
+        result.addError(path + "." + fieldName + " must match pattern ^[A-Za-z][A-Za-z0-9_-]*$");
     }
 }
 
@@ -94,14 +113,17 @@ void validateRequiredDurationField(
     ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
-) {
+)
+{
     validateRequiredStringField(value, result, fieldName, path);
 
-    if (!value.contains(fieldName) || !value.at(fieldName).isString()) {
+    if (!value.contains(fieldName) || !value.at(fieldName).isString())
+    {
         return;
     }
 
-    if (!isValidDuration(value.at(fieldName).asString())) {
+    if (!isValidDuration(value.at(fieldName).asString()))
+    {
         result.addError(path + "." + fieldName + " must be an ISO-8601 duration");
     }
 }
@@ -111,17 +133,21 @@ void validateOptionalDurationField(
     ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
-) {
-    if (!value.contains(fieldName)) {
+)
+{
+    if (!value.contains(fieldName))
+    {
         return;
     }
 
-    if (!value.at(fieldName).isString()) {
+    if (!value.at(fieldName).isString())
+    {
         result.addError(path + "." + fieldName + " must be a string");
         return;
     }
 
-    if (!isValidDuration(value.at(fieldName).asString())) {
+    if (!isValidDuration(value.at(fieldName).asString()))
+    {
         result.addError(path + "." + fieldName + " must be an ISO-8601 duration");
     }
 }
@@ -131,34 +157,41 @@ void validateOptionalNonNegativeIntegerField(
     ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
-) {
-    if (!value.contains(fieldName)) {
+)
+{
+    if (!value.contains(fieldName))
+    {
         return;
     }
 
-    if (!value.at(fieldName).isInt()) {
+    if (!value.at(fieldName).isInt())
+    {
         result.addError(path + "." + fieldName + " must be an integer");
         return;
     }
 
-    if (value.at(fieldName).asInt() < 0) {
+    if (value.at(fieldName).asInt() < 0)
+    {
         result.addError(path + "." + fieldName + " must be greater than or equal to 0");
     }
 }
 
-void validateNoAdditionalTopLevelFields(const json::Value& value, ValidationResult& result) {
+void validateNoAdditionalTopLevelFields(
+    const json::Value& value,
+    ValidationResult& result
+)
+{
     static const std::set<std::string> allowedFields = {
-        "workflowName",
-        "workflowVersion",
-        "startWorkflowStepName",
-        "expectedExecutionTime",
-        "steps",
+        "workflowName",          "workflowVersion", "startWorkflowStepName",
+        "expectedExecutionTime", "steps",
     };
 
-    for (const auto& [key, ignored] : value.asObject()) {
+    for (const auto& [key, ignored] : value.asObject())
+    {
         (void)ignored;
 
-        if (!allowedFields.contains(key)) {
+        if (!allowedFields.contains(key))
+        {
             result.addError("top-level field '" + key + "' is not allowed");
         }
     }
@@ -166,12 +199,14 @@ void validateNoAdditionalTopLevelFields(const json::Value& value, ValidationResu
 
 } // namespace
 
-ValidationResult validateWorkflowJson(const json::Value& value) {
+ValidationResult validateWorkflowJson(const json::Value& value)
+{
     ValidationResult result;
 
     requireObject(value, result, "$");
 
-    if (!result.valid) {
+    if (!result.valid)
+    {
         return result;
     }
 
@@ -183,39 +218,48 @@ ValidationResult validateWorkflowJson(const json::Value& value) {
 
     requireField(value, result, "workflowVersion", "$");
 
-    if (value.contains("workflowVersion")) {
-        if (!value.at("workflowVersion").isInt()) {
+    if (value.contains("workflowVersion"))
+    {
+        if (!value.at("workflowVersion").isInt())
+        {
             result.addError("$.workflowVersion must be an integer");
-        } else if (value.at("workflowVersion").asInt() < 1) {
+        }
+        else if (value.at("workflowVersion").asInt() < 1)
+        {
             result.addError("$.workflowVersion must be greater than or equal to 1");
         }
     }
 
     requireField(value, result, "steps", "$");
 
-    if (!value.contains("steps")) {
+    if (!value.contains("steps"))
+    {
         return result;
     }
 
-    if (!value.at("steps").isArray()) {
+    if (!value.at("steps").isArray())
+    {
         result.addError("$.steps must be an array");
         return result;
     }
 
     const auto& steps = value.at("steps").asArray();
 
-    if (steps.empty()) {
+    if (steps.empty())
+    {
         result.addError("$.steps must contain at least one step");
         return result;
     }
 
     std::set<std::string> stepNames;
 
-    for (std::size_t i = 0; i < steps.size(); ++i) {
+    for (std::size_t i = 0; i < steps.size(); ++i)
+    {
         const auto path = "$.steps[" + std::to_string(i) + "]";
         const auto& step = steps.at(i);
 
-        if (!step.isObject()) {
+        if (!step.isObject())
+        {
             result.addError(path + " must be an object");
             continue;
         }
@@ -224,21 +268,27 @@ ValidationResult validateWorkflowJson(const json::Value& value) {
         validateOptionalDurationField(step, result, "expectedExecutionTime", path);
         validateOptionalNonNegativeIntegerField(step, result, "maxRetries", path);
 
-        if (step.contains("name") && step.at("name").isString()) {
+        if (step.contains("name") && step.at("name").isString())
+        {
             const auto name = step.at("name").asString();
 
-            if (stepNames.contains(name)) {
+            if (stepNames.contains(name))
+            {
                 result.addError(path + ".name duplicates another step name: " + name);
-            } else {
+            }
+            else
+            {
                 stepNames.insert(name);
             }
         }
     }
 
-    if (value.contains("startWorkflowStepName") && value.at("startWorkflowStepName").isString()) {
+    if (value.contains("startWorkflowStepName") && value.at("startWorkflowStepName").isString())
+    {
         const auto startStepName = value.at("startWorkflowStepName").asString();
 
-        if (!stepNames.contains(startStepName)) {
+        if (!stepNames.contains(startStepName))
+        {
             result.addError("$.startWorkflowStepName must match one of the workflow step names");
         }
     }
@@ -246,14 +296,17 @@ ValidationResult validateWorkflowJson(const json::Value& value) {
     return result;
 }
 
-WorkflowDefinition parseWorkflowDefinition(const json::Value& value) {
+WorkflowDefinition parseWorkflowDefinition(const json::Value& value)
+{
     const auto validation = validateWorkflowJson(value);
 
-    if (!validation.valid) {
+    if (!validation.valid)
+    {
         std::ostringstream message;
         message << "Invalid workflow definition:";
 
-        for (const auto& error : validation.errors) {
+        for (const auto& error : validation.errors)
+        {
             message << "\n- " << error;
         }
 
@@ -266,20 +319,25 @@ WorkflowDefinition parseWorkflowDefinition(const json::Value& value) {
     workflow.startWorkflowStepName = value.at("startWorkflowStepName").asString();
     workflow.expectedExecutionTime = value.at("expectedExecutionTime").asString();
 
-    for (const auto& stepValue : value.at("steps").asArray()) {
+    for (const auto& stepValue : value.at("steps").asArray())
+    {
         WorkflowStep step;
         step.name = stepValue.at("name").asString();
 
-        if (stepValue.contains("expectedExecutionTime")) {
+        if (stepValue.contains("expectedExecutionTime"))
+        {
             step.expectedExecutionTime = stepValue.at("expectedExecutionTime").asString();
         }
 
-        if (stepValue.contains("maxRetries")) {
+        if (stepValue.contains("maxRetries"))
+        {
             step.maxRetries = stepValue.at("maxRetries").asInt();
         }
 
-        for (const auto& [key, fieldValue] : stepValue.asObject()) {
-            if (key != "name" && key != "expectedExecutionTime" && key != "maxRetries") {
+        for (const auto& [key, fieldValue] : stepValue.asObject())
+        {
+            if (key != "name" && key != "expectedExecutionTime" && key != "maxRetries")
+            {
                 step.additionalFields.emplace(key, fieldValue);
             }
         }
@@ -290,11 +348,15 @@ WorkflowDefinition parseWorkflowDefinition(const json::Value& value) {
     return workflow;
 }
 
-WorkflowDefinition parseWorkflowDefinitionText(const std::string& jsonText) {
-    try {
+WorkflowDefinition parseWorkflowDefinitionText(const std::string& jsonText)
+{
+    try
+    {
         const auto value = json::parse(jsonText);
         return parseWorkflowDefinition(value);
-    } catch (const json::JsonParseError& error) {
+    }
+    catch (const json::JsonParseError& error)
+    {
         throw std::invalid_argument(std::string("Invalid JSON text: ") + error.what());
     }
 }

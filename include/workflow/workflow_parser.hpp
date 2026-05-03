@@ -6,13 +6,16 @@
 #include <string>
 #include <vector>
 
-namespace workflow {
+namespace workflow
+{
 
-struct ValidationResult {
+struct ValidationResult
+{
     bool valid = true;
     std::vector<std::string> errors;
 
-    void addError(const std::string& error) {
+    void addError(const std::string& error)
+    {
         valid = false;
         errors.push_back(error);
     }

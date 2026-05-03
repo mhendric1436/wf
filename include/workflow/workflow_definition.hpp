@@ -6,9 +6,11 @@
 #include <string>
 #include <vector>
 
-namespace workflow {
+namespace workflow
+{
 
-struct WorkflowStep {
+struct WorkflowStep
+{
     std::string name;
     std::optional<std::string> expectedExecutionTime;
     std::optional<int> maxRetries;
@@ -16,7 +18,8 @@ struct WorkflowStep {
     json::Value::Object additionalFields;
 };
 
-struct WorkflowDefinition {
+struct WorkflowDefinition
+{
     std::string workflowName;
     int workflowVersion;
     std::string startWorkflowStepName;

@@ -5,12 +5,13 @@
 #include <stdexcept>
 #include <string>
 
-using workflow::json::parse;
 using workflow::parseWorkflowDefinition;
 using workflow::parseWorkflowDefinitionText;
 using workflow::validateWorkflowJson;
+using workflow::json::parse;
 
-namespace {
+namespace
+{
 
 const char* VALID_WORKFLOW_JSON = R"json(
 {
@@ -40,7 +41,8 @@ const char* VALID_WORKFLOW_JSON = R"json(
 
 } // namespace
 
-TEST_CASE("custom JSON parser parses object fields") {
+TEST_CASE("custom JSON parser parses object fields")
+{
     const auto value = parse(R"json({"name":"workflow","version":1,"enabled":true})json");
 
     REQUIRE(value.isObject());
@@ -49,7 +51,8 @@ TEST_CASE("custom JSON parser parses object fields") {
     REQUIRE(value.at("enabled").asBool());
 }
 
-TEST_CASE("custom JSON parser parses arrays") {
+TEST_CASE("custom JSON parser parses arrays")
+{
     const auto value = parse(R"json(["a","b","c"])json");
 
     REQUIRE(value.isArray());
@@ -59,11 +62,13 @@ TEST_CASE("custom JSON parser parses arrays") {
     REQUIRE(value[2].asString() == "c");
 }
 
-TEST_CASE("custom JSON parser rejects invalid JSON") {
+TEST_CASE("custom JSON parser rejects invalid JSON")
+{
     REQUIRE_THROWS_AS(parse(R"json({"name": )json"), workflow::json::JsonParseError);
 }
 
-TEST_CASE("valid workflow JSON passes validation") {
+TEST_CASE("valid workflow JSON passes validation")
+{
     const auto value = parse(VALID_WORKFLOW_JSON);
 
     const auto result = validateWorkflowJson(value);
@@ -72,7 +77,8 @@ TEST_CASE("valid workflow JSON passes validation") {
     REQUIRE(result.errors.empty());
 }
 
-TEST_CASE("valid workflow JSON parses into workflow definition") {
+TEST_CASE("valid workflow JSON parses into workflow definition")
+{
     const auto workflow = parseWorkflowDefinitionText(VALID_WORKFLOW_JSON);
 
     REQUIRE(workflow.workflowName == "orderProcessing");
@@ -97,7 +103,8 @@ TEST_CASE("valid workflow JSON parses into workflow definition") {
     REQUIRE(workflow.steps[2].maxRetries.value() == 1);
 }
 
-TEST_CASE("workflow name is required") {
+TEST_CASE("workflow name is required")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value.erase("workflowName");
 
@@ -107,7 +114,8 @@ TEST_CASE("workflow name is required") {
     REQUIRE_FALSE(result.errors.empty());
 }
 
-TEST_CASE("workflow version must be greater than or equal to 1") {
+TEST_CASE("workflow version must be greater than or equal to 1")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["workflowVersion"] = 0;
 
@@ -116,7 +124,8 @@ TEST_CASE("workflow version must be greater than or equal to 1") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("top-level expected execution time is required") {
+TEST_CASE("top-level expected execution time is required")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value.erase("expectedExecutionTime");
 
@@ -125,7 +134,8 @@ TEST_CASE("top-level expected execution time is required") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("top-level expected execution time must be ISO-8601 duration") {
+TEST_CASE("top-level expected execution time must be ISO-8601 duration")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["expectedExecutionTime"] = "10 minutes";
 
@@ -134,7 +144,8 @@ TEST_CASE("top-level expected execution time must be ISO-8601 duration") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("steps must contain at least one step") {
+TEST_CASE("steps must contain at least one step")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["steps"] = workflow::json::Value::array();
 
@@ -143,7 +154,8 @@ TEST_CASE("steps must contain at least one step") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("step name is required") {
+TEST_CASE("step name is required")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["steps"][0].erase("name");
 
@@ -152,7 +164,8 @@ TEST_CASE("step name is required") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("step names must be unique") {
+TEST_CASE("step names must be unique")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["steps"][1]["name"] = "validateOrder";
 
@@ -161,7 +174,8 @@ TEST_CASE("step names must be unique") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("start workflow step name must exist in steps") {
+TEST_CASE("start workflow step name must exist in steps")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["startWorkflowStepName"] = "missingStep";
 
@@ -170,7 +184,8 @@ TEST_CASE("start workflow step name must exist in steps") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("step maxRetries must be non-negative") {
+TEST_CASE("step maxRetries must be non-negative")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["steps"][0]["maxRetries"] = -1;
 
@@ -179,7 +194,8 @@ TEST_CASE("step maxRetries must be non-negative") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("step expected execution time must be ISO-8601 duration") {
+TEST_CASE("step expected execution time must be ISO-8601 duration")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["steps"][0]["expectedExecutionTime"] = "30 seconds";
 
@@ -188,7 +204,8 @@ TEST_CASE("step expected execution time must be ISO-8601 duration") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("additional step fields are preserved") {
+TEST_CASE("additional step fields are preserved")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["steps"][0]["customField"] = "customValue";
 
@@ -198,7 +215,8 @@ TEST_CASE("additional step fields are preserved") {
     REQUIRE(workflow.steps[0].additionalFields.at("customField").asString() == "customValue");
 }
 
-TEST_CASE("additional top-level fields are rejected") {
+TEST_CASE("additional top-level fields are rejected")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["customTopLevelField"] = "not allowed";
 
@@ -207,14 +225,16 @@ TEST_CASE("additional top-level fields are rejected") {
     REQUIRE_FALSE(result.valid);
 }
 
-TEST_CASE("parser throws on invalid workflow") {
+TEST_CASE("parser throws on invalid workflow")
+{
     auto value = parse(VALID_WORKFLOW_JSON);
     value["workflowVersion"] = 0;
 
     REQUIRE_THROWS_AS(parseWorkflowDefinition(value), std::invalid_argument);
 }
 
-TEST_CASE("parser throws on invalid JSON text") {
+TEST_CASE("parser throws on invalid JSON text")
+{
     const std::string invalidJson = R"json({ "workflowName": )json";
 
     REQUIRE_THROWS_AS(parseWorkflowDefinitionText(invalidJson), std::invalid_argument);

@@ -7,14 +7,20 @@
 #include <variant>
 #include <vector>
 
-namespace workflow::json {
+namespace workflow::json
+{
 
-class JsonParseError : public std::runtime_error {
+class JsonParseError : public std::runtime_error
+{
   public:
-    explicit JsonParseError(const std::string& message) : std::runtime_error(message) {}
+    explicit JsonParseError(const std::string& message)
+        : std::runtime_error(message)
+    {
+    }
 };
 
-class Value {
+class Value
+{
   public:
     using Object = std::map<std::string, Value>;
     using Array = std::vector<Value>;
@@ -68,8 +74,7 @@ class Value {
     static Value array();
 
   private:
-    using Storage =
-        std::variant<std::nullptr_t, bool, int, double, std::string, Object, Array>;
+    using Storage = std::variant<std::nullptr_t, bool, int, double, std::string, Object, Array>;
 
     Storage value_;
 };
