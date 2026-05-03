@@ -1,21 +1,24 @@
 #include "wf/workflow_service.hpp"
 
-namespace workflow {
+namespace workflow
+{
 
 WorkflowService::WorkflowService(WorkflowOrchestrator& orchestrator)
-    : orchestrator_(orchestrator) {}
+    : orchestrator_(orchestrator)
+{
+}
 
-ValidateWorkflowDefinitionResponse WorkflowService::validateWorkflowDefinition(
-    const ValidateWorkflowDefinitionRequest& request
-) const {
+ValidateWorkflowDefinitionResponse
+WorkflowService::validateWorkflowDefinition(const ValidateWorkflowDefinitionRequest& request) const
+{
     return ValidateWorkflowDefinitionResponse{
         .validation = validateWorkflowJson(request.definitionJson),
     };
 }
 
-RegisterWorkflowDefinitionResponse WorkflowService::registerWorkflowDefinition(
-    const RegisterWorkflowDefinitionRequest& request
-) {
+RegisterWorkflowDefinitionResponse
+WorkflowService::registerWorkflowDefinition(const RegisterWorkflowDefinitionRequest& request)
+{
     WorkflowDefinition definition = parseWorkflowDefinition(request.definitionJson);
 
     orchestrator_.workflowDefinitionStore().save(definition);
@@ -25,39 +28,31 @@ RegisterWorkflowDefinitionResponse WorkflowService::registerWorkflowDefinition(
     };
 }
 
-StartWorkflowExecutionResponse WorkflowService::startWorkflowExecution(
-    const StartWorkflowExecutionRequest& request
-) {
+StartWorkflowExecutionResponse
+WorkflowService::startWorkflowExecution(const StartWorkflowExecutionRequest& request)
+{
     return StartWorkflowExecutionResponse{
         .execution = orchestrator_.startWorkflow(
-            request.workflowName,
-            request.workflowVersion,
-            request.input
+            request.workflowName, request.workflowVersion, request.input
         ),
     };
 }
 
-CompleteWorkflowStepResponse WorkflowService::completeWorkflowStep(
-    const CompleteWorkflowStepRequest& request
-) {
+CompleteWorkflowStepResponse
+WorkflowService::completeWorkflowStep(const CompleteWorkflowStepRequest& request)
+{
     return CompleteWorkflowStepResponse{
         .execution = orchestrator_.completeStep(
-            request.workflowExecutionId,
-            request.stepName,
-            request.stepOutput
+            request.workflowExecutionId, request.stepName, request.stepOutput
         ),
     };
 }
 
-FailWorkflowStepResponse WorkflowService::failWorkflowStep(
-    const FailWorkflowStepRequest& request
-) {
+FailWorkflowStepResponse WorkflowService::failWorkflowStep(const FailWorkflowStepRequest& request)
+{
     return FailWorkflowStepResponse{
-        .execution = orchestrator_.failStep(
-            request.workflowExecutionId,
-            request.stepName,
-            request.reason
-        ),
+        .execution =
+            orchestrator_.failStep(request.workflowExecutionId, request.stepName, request.reason),
     };
 }
 

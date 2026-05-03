@@ -244,19 +244,23 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     return execution;
 }
 
-WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() {
+WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore()
+{
     return definitionStore_;
 }
 
-const WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() const {
+const WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() const
+{
     return definitionStore_;
 }
 
-WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() {
+WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore()
+{
     return executionStore_;
 }
 
-const WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() const {
+const WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() const
+{
     return executionStore_;
 }
 
