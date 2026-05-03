@@ -9,6 +9,7 @@ obj/
 *.dylib
 *.dll
 *.exe
+*.png
 
 # ctags outputs
 tags

@@ -3,10 +3,15 @@ CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -Werror -O2 -g
 CPPFLAGS := -Iinclude -Ithird_party
 
 FORMAT := clang-format
+PLANTUML ?= plantuml
 
 BUILD_DIR := build
 OBJ_DIR := $(BUILD_DIR)/obj
 BIN_DIR := $(BUILD_DIR)/bin
+
+DOCS_DIR := docs
+PUML_FILES := $(wildcard $(DOCS_DIR)/*.puml)
+PNG_FILES := $(PUML_FILES:.puml=.png)
 
 LIB_NAME := libwf.a
 LIB := $(BUILD_DIR)/$(LIB_NAME)
@@ -49,7 +54,7 @@ FORMAT_FILES := \
 	src/workflow_service.cpp \
 	tests/workflow_parser_tests.cpp
 
-.PHONY: all build test format format-check clean help
+.PHONY: all build test format format-check docs-png clean help
 
 all: test
 
@@ -84,8 +89,14 @@ format:
 format-check:
 	$(FORMAT) --dry-run --Werror $(FORMAT_FILES)
 
+docs-png: $(PNG_FILES)
+
+$(DOCS_DIR)/%.png: $(DOCS_DIR)/%.puml
+	$(PLANTUML) -tpng $<
+
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -f $(DOCS_DIR)/*.png
 
 help:
 	@echo "Targets:"
@@ -94,9 +105,11 @@ help:
 	@echo "  make test         Build and run tests"
 	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
-	@echo "  make clean        Remove build outputs"
+	@echo "  make docs-png     Generate PNG diagrams from docs/*.puml"
+	@echo "  make clean        Remove build outputs and generated docs/*.png"
 	@echo ""
 	@echo "Variables:"
 	@echo "  CXX=$(CXX)"
 	@echo "  CXXFLAGS=$(CXXFLAGS)"
 	@echo "  CPPFLAGS=$(CPPFLAGS)"
+	@echo "  PLANTUML=$(PLANTUML)"
