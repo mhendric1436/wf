@@ -1,0 +1,76 @@
+@startuml
+hide footbox
+
+title Workflow Execution via WorkflowService
+
+autonumber
+
+actor Client
+participant "WorkflowService" as Service
+participant "WorkflowOrchestrator" as Orchestrator
+participant "WorkflowDefinitionStore" as DefStore
+participant "WorkflowExecutionStore" as ExecStore
+participant "WorkflowLogic" as Logic
+
+== Start workflow execution ==
+
+Client -> Service : startWorkflowExecution(request)
+Service -> Orchestrator : startWorkflow(workflowName, workflowVersion, input)
+Orchestrator -> DefStore : find(workflowName, workflowVersion)
+DefStore --> Orchestrator : WorkflowDefinition
+Orchestrator -> Orchestrator : create WorkflowExecution\nstatus = Running\ncurrentStepName = startWorkflowStepName\ncurrentStepAttempt = 0
+Orchestrator -> ExecStore : save(execution)
+ExecStore --> Orchestrator : ok
+Orchestrator --> Service : WorkflowExecution
+Service --> Client : StartWorkflowExecutionResponse
+
+== Complete current step and advance ==
+
+Client -> Service : completeWorkflowStep(request)
+Service -> Orchestrator : completeStep(workflowExecutionId, stepName, stepOutput)
+Orchestrator -> ExecStore : find(workflowExecutionId)
+ExecStore --> Orchestrator : WorkflowExecution
+Orchestrator -> DefStore : find(workflowName, workflowVersion)
+DefStore --> Orchestrator : WorkflowDefinition
+Orchestrator -> Logic : decideNextStep(context)
+Logic --> Orchestrator : NextStepDecision
+
+alt workflow complete
+    Orchestrator -> Orchestrator : status = Completed\nstate = updatedState
+    Orchestrator -> ExecStore : update(execution)
+    ExecStore --> Orchestrator : ok
+    Orchestrator --> Service : WorkflowExecution
+    Service --> Client : CompleteWorkflowStepResponse
+else next step selected
+    Orchestrator -> Orchestrator : validate nextStepName exists\ncurrentStepName = nextStepName\ncurrentStepAttempt = 0\nstate = updatedState
+    Orchestrator -> ExecStore : update(execution)
+    ExecStore --> Orchestrator : ok
+    Orchestrator --> Service : WorkflowExecution
+    Service --> Client : CompleteWorkflowStepResponse
+end
+
+== Fail current step ==
+
+Client -> Service : failWorkflowStep(request)
+Service -> Orchestrator : failStep(workflowExecutionId, stepName, reason)
+Orchestrator -> ExecStore : find(workflowExecutionId)
+ExecStore --> Orchestrator : WorkflowExecution
+Orchestrator -> DefStore : find(workflowName, workflowVersion)
+DefStore --> Orchestrator : WorkflowDefinition
+Orchestrator -> Orchestrator : find current step definition
+
+alt retry attempts remain
+    Orchestrator -> Orchestrator : currentStepAttempt += 1\nstatus = Running
+    Orchestrator -> ExecStore : update(execution)
+    ExecStore --> Orchestrator : ok
+    Orchestrator --> Service : WorkflowExecution
+    Service --> Client : FailWorkflowStepResponse
+else max retries exceeded
+    Orchestrator -> Orchestrator : status = Failed\nfailureReason = reason
+    Orchestrator -> ExecStore : update(execution)
+    ExecStore --> Orchestrator : ok
+    Orchestrator --> Service : WorkflowExecution
+    Service --> Client : FailWorkflowStepResponse
+end
+
+@enduml
