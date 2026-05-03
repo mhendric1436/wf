@@ -1,44 +1,84 @@
-# Workflow Definition Parser
+# wf
 
-A small C++20 project for parsing and validating workflow definition JSON files.
+`wf` is a C++20 workflow definition parser, validator, and workflow service framework.
 
-The project includes:
+The project currently provides:
 
-- A custom recursive-descent JSON parser
-- A workflow definition model
-- A workflow validator
-- Unit tests using Catch2
-- A regular `Makefile` build using `clang++`
-- Code formatting with `clang-format`
+- a custom JSON parser
+- workflow definition model types
+- workflow definition validation
+- workflow execution model types
+- workflow service/orchestrator interfaces
+- in-memory backend stores
+- Catch2 unit tests
+- Makefile-based build using `clang++`
+- formatting with `clang-format`
+- PlantUML architecture and sequence diagrams
 
-No general-purpose JSON library is required.
+The current implementation is intentionally lightweight and dependency-minimal. The only third-party code expected in the repo is Catch2's amalgamated test runner.
 
-## Workflow Definition Model
+## Repository layout
 
-A workflow definition is uniquely identified by:
+```text
+wf/
+├── Makefile
+├── .clang-format
+├── .gitignore
+├── README.md
+├── docs/
+│   ├── wf-architecture.puml
+│   └── wf-workflow-execution-sequence.puml
+├── include/
+│   └── wf/
+│       ├── json.hpp
+│       ├── workflow_definition.hpp
+│       ├── workflow_execution.hpp
+│       ├── workflow_logic.hpp
+│       ├── workflow_orchestrator.hpp
+│       ├── workflow_parser.hpp
+│       ├── workflow_service.hpp
+│       ├── store/
+│       │   ├── workflow_definition_store.hpp
+│       │   └── workflow_execution_store.hpp
+│       └── backend/
+│           └── memory/
+│               ├── in_memory_workflow_definition_store.hpp
+│               └── in_memory_workflow_execution_store.hpp
+├── src/
+│   ├── json.cpp
+│   ├── workflow_parser.cpp
+│   ├── workflow_orchestrator.cpp
+│   ├── workflow_service.cpp
+│   └── backend/
+│       └── memory/
+│           ├── in_memory_workflow_definition_store.cpp
+│           └── in_memory_workflow_execution_store.cpp
+├── tests/
+│   ├── workflow_parser_tests.cpp
+│   └── backend/
+│       └── memory/
+│           ├── in_memory_workflow_definition_store_tests.cpp
+│           └── in_memory_workflow_execution_store_tests.cpp
+└── third_party/
+    └── catch2/
+        ├── catch_amalgamated.cpp
+        └── catch_amalgamated.hpp
+```
+
+## Workflow definition
+
+A workflow definition is identified by:
 
 - `workflowName`
 - `workflowVersion`
+
+The definition also declares:
+
 - `startWorkflowStepName`
+- top-level `expectedExecutionTime`
+- a list of workflow `steps`
 
-A workflow also contains:
-
-- `expectedExecutionTime` for the overall workflow
-- `steps`, a list of workflow steps
-
-Each workflow step contains:
-
-- `name`
-- `expectedExecutionTime`
-- `maxRetries`
-
-Each step name must be unique within a workflow definition.
-
-The `startWorkflowStepName` must match the name of one of the workflow steps.
-
-Workflow transition logic is intentionally not modeled in the workflow definition. The workflow business logic is expected to determine and request the next step to execute at runtime.
-
-## Example Workflow JSON
+Example:
 
 ```json
 {
@@ -66,58 +106,217 @@ Workflow transition logic is intentionally not modeled in the workflow definitio
 }
 ```
 
-## Repository Layout
+## Workflow step fields
 
-```text
-wf/
-├── Makefile
-├── .clang-format
-├── .gitignore
-├── include/
-│   └── wf/
-│       ├── json.hpp
-│       ├── workflow_definition.hpp
-│       └── workflow_parser.hpp
-├── src/
-│   ├── json.cpp
-│   └── workflow_parser.cpp
-├── tests/
-│   └── workflow_parser_tests.cpp
-└── third_party/
-    └── catch2/
-        ├── catch_amalgamated.hpp
-        └── catch_amalgamated.cpp
+Each workflow step currently has these defined fields:
+
+```json
+{
+  "name": "validateOrder",
+  "expectedExecutionTime": "PT30S",
+  "maxRetries": 2
+}
 ```
 
-## Requirements
+The parser and model allow additional step-level fields so the definition can be extended later.
+
+Do not rely on these fields for transition logic:
+
+- `nextStep`
+- `service`
+- `type`
+
+Workflow transition logic is external to the workflow definition. The workflow service asks workflow business logic which step should execute next.
+
+## Validation rules
+
+The parser/validator currently enforces:
+
+- top-level JSON value must be an object
+- `workflowName` is required
+- `workflowName` must match `^[A-Za-z][A-Za-z0-9_-]*$`
+- `workflowVersion` is required
+- `workflowVersion` must be an integer greater than or equal to `1`
+- `startWorkflowStepName` is required
+- top-level `expectedExecutionTime` is required
+- execution duration fields must use ISO-8601 duration strings, such as `PT30S`, `PT5M`, `PT1H`
+- `steps` is required
+- `steps` must contain at least one step
+- each step must have a `name`
+- step names must be unique within the workflow definition
+- `startWorkflowStepName` must match one of the step names
+- step `maxRetries`, when present, must be a non-negative integer
+- top-level additional fields are rejected
+- step-level additional fields are preserved
+
+## Custom JSON parser
+
+The project uses its own JSON parser instead of `nlohmann/json`.
+
+Files:
+
+```text
+include/wf/json.hpp
+src/json.cpp
+```
+
+The parser supports:
+
+- objects
+- arrays
+- strings
+- integers
+- floating-point numbers
+- booleans
+- null
+
+Unicode escape sequences such as `\uXXXX` are intentionally not supported yet. The parser reports them as parse errors instead of silently producing incorrect values.
+
+## Workflow service framework
+
+The service framework is split into core interfaces and backend implementations.
+
+Core service files:
+
+```text
+include/wf/workflow_execution.hpp
+include/wf/workflow_logic.hpp
+include/wf/workflow_orchestrator.hpp
+include/wf/workflow_service.hpp
+
+src/workflow_orchestrator.cpp
+src/workflow_service.cpp
+```
+
+The main service operations are:
+
+- validate workflow definition
+- register workflow definition
+- start workflow execution
+- complete workflow step
+- fail workflow step
+
+The orchestration flow is:
+
+1. Client starts a workflow execution through `WorkflowService`.
+2. `WorkflowService` delegates to `WorkflowOrchestrator`.
+3. `WorkflowOrchestrator` loads the workflow definition.
+4. It creates a `WorkflowExecution` at the declared start step.
+5. The execution is saved through a `WorkflowExecutionStore`.
+6. When a step completes, the orchestrator asks `WorkflowLogic` for the next step decision.
+7. The workflow either advances to the next step or completes.
+8. When a step fails, retry behavior is governed by the step's `maxRetries`.
+
+## Store interfaces
+
+Store interfaces live under:
+
+```text
+include/wf/store/
+```
+
+Current interfaces:
+
+```text
+include/wf/store/workflow_definition_store.hpp
+include/wf/store/workflow_execution_store.hpp
+```
+
+These interfaces isolate the core workflow framework from backend-specific persistence.
+
+## In-memory backend
+
+The first backend implementation is an in-memory backend.
+
+Headers:
+
+```text
+include/wf/backend/memory/in_memory_workflow_definition_store.hpp
+include/wf/backend/memory/in_memory_workflow_execution_store.hpp
+```
+
+Sources:
+
+```text
+src/backend/memory/in_memory_workflow_definition_store.cpp
+src/backend/memory/in_memory_workflow_execution_store.cpp
+```
+
+Tests:
+
+```text
+tests/backend/memory/in_memory_workflow_definition_store_tests.cpp
+tests/backend/memory/in_memory_workflow_execution_store_tests.cpp
+```
+
+The in-memory definition store supports:
+
+- save
+- find
+- list
+- remove
+- clear
+- size
+
+The in-memory execution store supports:
+
+- save
+- find
+- update
+- remove
+- clear
+- size
+
+Current backend behavior:
+
+- definition save replaces an existing workflow with the same name/version
+- execution save replaces an existing execution with the same execution ID
+- execution update requires the execution to already exist
+- invalid definition keys throw `std::invalid_argument`
+- empty execution IDs throw `std::invalid_argument`
+
+## Future backend layout
+
+Additional backends should be added under the same directory pattern:
+
+```text
+include/wf/backend/sqlite/
+src/backend/sqlite/
+
+include/wf/backend/postgres/
+src/backend/postgres/
+
+include/wf/backend/rocksdb/
+src/backend/rocksdb/
+```
+
+The core service should continue depending on store interfaces, not backend-specific classes.
+
+## Build requirements
+
+Required:
 
 - C++20 compiler
 - `clang++`
 - `clang-format`
 - `make`
-- Catch2 amalgamated test files
+
+Optional:
+
+- PlantUML, for rendering diagrams
+- Graphviz, depending on the PlantUML installation and diagram type
 
 On macOS:
 
 ```bash
-brew install llvm clang-format
+brew install llvm clang-format plantuml graphviz
 ```
 
-Depending on your shell environment, Homebrew LLVM may not be first on your `PATH`. You can override the compiler when running `make`:
+Depending on your shell configuration, Homebrew's LLVM tools may not be first on your `PATH`.
 
-```bash
-make CXX=/opt/homebrew/opt/llvm/bin/clang++
-```
+## Test dependency setup
 
-For Intel macOS Homebrew installations, the path may be:
-
-```bash
-make CXX=/usr/local/opt/llvm/bin/clang++
-```
-
-## Download Catch2
-
-This project expects Catch2 amalgamated files under `third_party/catch2`.
+The project expects Catch2 amalgamated files under `third_party/catch2`.
 
 ```bash
 mkdir -p third_party/catch2
@@ -131,7 +330,9 @@ curl -L \
   -o third_party/catch2/catch_amalgamated.cpp
 ```
 
-## Build and Test
+## Build and test
+
+Build and run tests:
 
 ```bash
 make
@@ -143,15 +344,27 @@ Equivalent explicit command:
 make test
 ```
 
-The test binary is written to:
+Build only the static library:
 
-```text
-build/bin/workflow_parser_tests
+```bash
+make build
 ```
 
-## Format Code
+The generated library is:
 
-Format all project source files:
+```text
+build/libwf.a
+```
+
+The generated test binary is:
+
+```text
+build/bin/wf_tests
+```
+
+## Formatting
+
+Format source and header files:
 
 ```bash
 make format
@@ -163,115 +376,79 @@ Check formatting without modifying files:
 make format-check
 ```
 
-## Clean Build Outputs
+## Diagrams
+
+PlantUML source files live in:
+
+```text
+docs/
+```
+
+Generate PNG files from all `docs/*.puml` files:
+
+```bash
+make docs-png
+```
+
+This converts files such as:
+
+```text
+docs/wf-architecture.puml
+docs/wf-workflow-execution-sequence.puml
+```
+
+into:
+
+```text
+docs/wf-architecture.png
+docs/wf-workflow-execution-sequence.png
+```
+
+## Clean
+
+Remove build outputs and generated diagram PNG files:
 
 ```bash
 make clean
 ```
 
-## Makefile Targets
+## Current Makefile targets
 
 ```text
 make              Build and run tests
+make build        Build static library only
 make test         Build and run tests
-make format       Format source files with clang-format
+make format       Format source and header files with clang-format
 make format-check Check formatting without modifying files
-make clean        Remove build outputs
+make docs-png     Generate PNG diagrams from docs/*.puml
+make clean        Remove build outputs and generated docs/*.png
 make help         Show available targets
 ```
 
-## Validation Rules
+## Current development status
 
-The validator checks the following top-level rules:
+Implemented:
 
-- The root JSON value must be an object.
-- `workflowName` is required.
-- `workflowName` must be a non-empty string.
-- `workflowName` must match `^[A-Za-z][A-Za-z0-9_-]*$`.
-- `workflowVersion` is required.
-- `workflowVersion` must be an integer greater than or equal to `1`.
-- `startWorkflowStepName` is required.
-- `startWorkflowStepName` must be a non-empty string.
-- `expectedExecutionTime` is required.
-- `expectedExecutionTime` must be an ISO-8601 duration string.
-- `steps` is required.
-- `steps` must be a non-empty array.
-- Additional top-level fields are rejected.
+- custom JSON parser
+- workflow definition model
+- workflow definition parser and validator
+- workflow execution model
+- workflow service API surface
+- workflow orchestrator API surface
+- store interfaces
+- memory backend store implementations
+- parser tests
+- memory backend store tests
+- PlantUML architecture diagram
+- PlantUML workflow execution sequence diagram
+- Makefile build/test/format/docs workflow
 
-The validator checks the following step-level rules:
+Planned next work:
 
-- Each step must be an object.
-- `name` is required.
-- `name` must be a non-empty string.
-- `name` must match `^[A-Za-z][A-Za-z0-9_-]*$`.
-- Step names must be unique within the workflow definition.
-- `expectedExecutionTime`, when present, must be an ISO-8601 duration string.
-- `maxRetries`, when present, must be an integer greater than or equal to `0`.
-
-The validator also checks:
-
-- `startWorkflowStepName` must match one of the step names.
-
-## Custom JSON Parser
-
-The custom parser supports:
-
-- JSON objects
-- JSON arrays
-- Strings
-- Integers
-- Floating-point numbers
-- Booleans
-- `null`
-- Standard string escapes such as `\\`, `\"`, `\n`, `\r`, and `\t`
-
-The parser intentionally does not decode `\uXXXX` Unicode escape sequences yet. If a Unicode escape sequence is encountered, the parser reports a parse error rather than silently producing incorrect data.
-
-## Core API
-
-### Parse JSON Text
-
-```cpp
-workflow::WorkflowDefinition workflow =
-    workflow::parseWorkflowDefinitionText(jsonText);
-```
-
-### Validate an Already Parsed JSON Value
-
-```cpp
-auto value = workflow::json::parse(jsonText);
-auto result = workflow::validateWorkflowJson(value);
-
-if (!result.valid) {
-    for (const auto& error : result.errors) {
-        // handle validation error
-    }
-}
-```
-
-### Parse an Already Parsed JSON Value
-
-```cpp
-auto value = workflow::json::parse(jsonText);
-workflow::WorkflowDefinition workflow = workflow::parseWorkflowDefinition(value);
-```
-
-`parseWorkflowDefinition` throws `std::invalid_argument` if validation fails.
-
-`parseWorkflowDefinitionText` throws `std::invalid_argument` if the JSON text is invalid or the workflow definition fails validation.
-
-## Notes
-
-This project deliberately keeps workflow transitions out of the static workflow definition. Fields such as `nextStep`, `service`, and `type` are not part of the core step model.
-
-The workflow business logic is responsible for deciding the next step to execute.
-
-## Suggested Next Enhancements
-
-Potential future improvements include:
-
-- Add file-based workflow loading helpers
-- Add JSON serialization for workflow definitions
-- Add `\uXXXX` Unicode escape decoding
-- Add a command-line validator executable
-- Add CI using `make format-check` and `make test`
+- add orchestrator unit tests
+- finalize any missing orchestrator behavior
+- add service unit tests
+- add example workflow definition files
+- add an executable sample or CLI driver
+- add HTTP API layer
+- add persistent backends such as SQLite, Postgres, or RocksDB
