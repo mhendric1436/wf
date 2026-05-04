@@ -18,60 +18,22 @@ LIB := $(BUILD_DIR)/$(LIB_NAME)
 
 TEST_BIN := $(BIN_DIR)/wf_tests
 
-SRC := \
-	src/json.cpp \
-	src/workflow_parser.cpp \
-	src/workflow_orchestrator.cpp \
-	src/workflow_service.cpp \
-	src/backend/memory/in_memory_workflow_definition_store.cpp \
-	src/backend/memory/in_memory_workflow_execution_store.cpp \
-	src/backend/memory/in_memory_workflow_step_execution_store.cpp
-
-OBJ := $(patsubst src/%.cpp,$(OBJ_DIR)/src/%.o,$(SRC))
-
-TEST_SRC := \
-	tests/workflow_parser_tests.cpp \
-	tests/workflow_orchestrator_tests.cpp \
-	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
-
-TEST_OBJ := $(patsubst tests/%.cpp,$(OBJ_DIR)/tests/%.o,$(TEST_SRC))
+SRC := $(shell find src -name '*.cpp' | sort)
+TEST_SRC := $(shell find tests -name '*.cpp' | sort)
+HEADER_FILES := $(shell find include -name '*.hpp' | sort)
 
 CATCH_SRC := third_party/catch2/catch_amalgamated.cpp
-CATCH_OBJ := $(OBJ_DIR)/third_party/catch2/catch_amalgamated.o
+
+OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRC))
+TEST_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(TEST_SRC))
+CATCH_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(CATCH_SRC))
 
 FORMAT_FILES := \
-	include/wf/json.hpp \
-	include/wf/workflow_definition.hpp \
-	include/wf/workflow_parser.hpp \
-	include/wf/workflow_execution.hpp \
-	include/wf/workflow_step_execution.hpp \
-	include/wf/workflow_logic.hpp \
-	include/wf/workflow_orchestrator.hpp \
-	include/wf/workflow_service.hpp \
-	include/wf/store/workflow_definition_store.hpp \
-	include/wf/store/workflow_execution_store.hpp \
-	include/wf/store/workflow_step_execution_store.hpp \
-	include/wf/backend/memory/in_memory_workflow_definition_store.hpp \
-	include/wf/backend/memory/in_memory_workflow_execution_store.hpp \
-	include/wf/backend/memory/in_memory_workflow_step_execution_store.hpp \
-	src/json.cpp \
-	src/workflow_parser.cpp \
-	src/workflow_orchestrator.cpp \
-	src/workflow_service.cpp \
-	src/backend/memory/in_memory_workflow_definition_store.cpp \
-	src/backend/memory/in_memory_workflow_execution_store.cpp \
-	src/backend/memory/in_memory_workflow_step_execution_store.cpp \
-	tests/workflow_parser_tests.cpp \
-	tests/workflow_orchestrator_tests.cpp \
-	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
+	$(HEADER_FILES) \
+	$(SRC) \
+	$(TEST_SRC)
 
-.PHONY: all build test format format-check docs-png clean help
+.PHONY: all build test format format-check docs-png clean help print-files
 
 all: test
 
@@ -85,15 +47,7 @@ $(TEST_BIN): $(LIB) $(TEST_OBJ) $(CATCH_OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(TEST_OBJ) $(CATCH_OBJ) $(LIB)
 
-$(OBJ_DIR)/src/%.o: src/%.cpp
-	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
-
-$(OBJ_DIR)/tests/%.o: tests/%.cpp
-	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
-
-$(OBJ_DIR)/third_party/catch2/%.o: third_party/catch2/%.cpp
+$(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
@@ -115,6 +69,16 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(DOCS_DIR)/*.png
 
+print-files:
+	@echo "SRC:"
+	@printf '  %s\n' $(SRC)
+	@echo ""
+	@echo "TEST_SRC:"
+	@printf '  %s\n' $(TEST_SRC)
+	@echo ""
+	@echo "HEADER_FILES:"
+	@printf '  %s\n' $(HEADER_FILES)
+
 help:
 	@echo "Targets:"
 	@echo "  make              Build and run tests"
@@ -123,6 +87,7 @@ help:
 	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
 	@echo "  make docs-png     Generate PNG diagrams from docs/*.puml"
+	@echo "  make print-files  Show discovered source, test, and header files"
 	@echo "  make clean        Remove build outputs and generated docs/*.png"
 	@echo ""
 	@echo "Variables:"
