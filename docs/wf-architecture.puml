@@ -1,121 +1,128 @@
-@startuml wf-architecture
-
-' Architecture diagram for the wf repository.
-' Render with: plantuml docs/wf-architecture.puml
+@startuml
+title wf Architecture
 
 skinparam componentStyle rectangle
-skinparam shadowing false
 skinparam packageStyle rectangle
-skinparam defaultTextAlignment center
-skinparam wrapWidth 220
-skinparam maxMessageSize 220
 
-title wf Repository Architecture
+hide stereotypes
 
-package "wf repo" {
+package "wf core" {
+    component "json.hpp / json.cpp\nCustom JSON Parser" as Json
 
-  package "include/wf" {
-    component "json.hpp\nworkflow::json::Value\nworkflow::json::parse" as JsonHpp
-    component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowStep" as DefinitionHpp
-    component "workflow_parser.hpp\nValidationResult\nvalidateWorkflowJson()\nparseWorkflowDefinition()" as ParserHpp
-    component "workflow_definition_store.hpp\nWorkflowDefinitionStore" as DefinitionStoreHpp
-    component "workflow_execution.hpp\nWorkflowExecution\nExecution Status Types" as ExecutionHpp
-    component "workflow_execution_store.hpp\nWorkflowExecutionStore" as ExecutionStoreHpp
-    component "workflow_logic.hpp\nWorkflowLogic\nNextStepDecision" as LogicHpp
-    component "workflow_orchestrator.hpp\nWorkflowOrchestrator" as OrchestratorHpp
-    component "workflow_service.hpp\nWorkflowService\nRequest/Response DTOs" as ServiceHpp
-  }
+    component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowStep" as DefinitionModel
+    component "workflow_parser.hpp / workflow_parser.cpp\nParser + Validator" as Parser
 
-  package "src" {
-    component "json.cpp\nCustom recursive-descent JSON parser" as JsonCpp
-    component "workflow_parser.cpp\nDefinition validation and parsing" as ParserCpp
-    component "workflow_definition_store.cpp\nStore translation unit" as DefinitionStoreCpp
-    component "workflow_execution_store.cpp\nStore translation unit" as ExecutionStoreCpp
-    component "workflow_orchestrator.cpp\nExecution orchestration" as OrchestratorCpp
-    component "workflow_service.cpp\nService facade" as ServiceCpp
-  }
+    component "workflow_execution.hpp\nWorkflowExecution\nWorkflowExecutionStatus\nStepExecutionStatus" as ExecutionModel
 
-  package "tests" {
-    component "workflow_parser_tests.cpp\nParser and validator tests" as ParserTests
-  }
+    component "workflow_step_execution.hpp\nWorkflowStepExecution" as StepExecutionModel
 
-  package "third_party/catch2" {
-    component "catch_amalgamated.hpp/cpp\nUnit test framework" as Catch2
-  }
+    component "workflow_logic.hpp\nWorkflowLogic\nNextStepDecision" as Logic
 
-  package "build tooling" {
-    component "Makefile\nclang++ build\nclang-format targets\nstatic library + tests" as Makefile
-    component ".clang-format" as ClangFormat
-    component ".gitignore" as GitIgnore
-  }
+    component "workflow_orchestrator.hpp / workflow_orchestrator.cpp\nWorkflowOrchestrator" as Orchestrator
+
+    component "workflow_service.hpp / workflow_service.cpp\nWorkflowService" as Service
 }
 
-package "External / Future Boundary" {
-  component "HTTP API Layer\nFuture REST adapter" as HttpLayer
-  component "Workflow Business Logic\nProvides next-step decisions" as BusinessLogic
-  database "Future Persistent Store\nDefinitions + Executions" as PersistentStore
+package "store interfaces" {
+    interface "WorkflowDefinitionStore" as DefinitionStore
+    interface "WorkflowExecutionStore" as ExecutionStore
+    interface "WorkflowStepExecutionStore" as StepExecutionStore
 }
 
-JsonCpp ..> JsonHpp : implements
-ParserCpp ..> ParserHpp : implements
-DefinitionStoreCpp ..> DefinitionStoreHpp : placeholder TU
-ExecutionStoreCpp ..> ExecutionStoreHpp : placeholder TU
-OrchestratorCpp ..> OrchestratorHpp : implements
-ServiceCpp ..> ServiceHpp : implements
+package "backend/memory" {
+    component "InMemoryWorkflowDefinitionStore" as MemoryDefinitionStore
+    component "InMemoryWorkflowExecutionStore" as MemoryExecutionStore
+    component "InMemoryWorkflowStepExecutionStore" as MemoryStepExecutionStore
+}
 
-DefinitionHpp ..> JsonHpp : additional step fields
-ParserHpp ..> JsonHpp : validates JSON value
-ParserHpp ..> DefinitionHpp : produces model
-ParserCpp ..> JsonHpp : parses JSON text
-ParserCpp ..> DefinitionHpp : builds WorkflowDefinition
+package "tests" {
+    component "workflow_parser_tests.cpp" as ParserTests
+    component "backend/memory/\nin_memory_workflow_definition_store_tests.cpp" as DefinitionStoreTests
+    component "backend/memory/\nin_memory_workflow_execution_store_tests.cpp" as ExecutionStoreTests
+    component "backend/memory/\nin_memory_workflow_step_execution_store_tests.cpp" as StepExecutionStoreTests
+}
 
-ServiceHpp ..> ParserHpp : validate/register definitions
-ServiceHpp ..> DefinitionStoreHpp : save definitions
-ServiceHpp ..> OrchestratorHpp : start/complete/fail executions
+package "docs" {
+    artifact "wf-architecture.puml" as ArchitectureDoc
+    artifact "wf-workflow-execution-sequence.puml" as SequenceDoc
+}
 
-OrchestratorHpp ..> DefinitionStoreHpp : load definition
-OrchestratorHpp ..> ExecutionStoreHpp : persist execution state
-OrchestratorHpp ..> LogicHpp : ask for next step
-OrchestratorHpp ..> ExecutionHpp : returns execution
+package "external callers" {
+    actor "Frontend API Tier" as Frontend
+    actor "Backend Worker Tier" as Worker
+}
 
-LogicHpp ..> JsonHpp : input/state/output payloads
-ExecutionHpp ..> JsonHpp : input and state payloads
+Frontend --> Service : startWorkflowExecution
+Worker --> Service : pollAndClaimWorkflowSteps\ncompleteWorkflowStep\nfailWorkflowStep
 
-ParserTests ..> ParserHpp : exercises
-ParserTests ..> JsonHpp : parses fixtures
-ParserTests ..> Catch2 : uses
+Service --> Orchestrator : delegates orchestration
+Service --> Parser : validate/register definitions
 
-Makefile ..> JsonCpp : compiles
-Makefile ..> ParserCpp : compiles
-Makefile ..> DefinitionStoreCpp : compiles
-Makefile ..> ExecutionStoreCpp : compiles
-Makefile ..> OrchestratorCpp : compiles
-Makefile ..> ServiceCpp : compiles
-Makefile ..> ParserTests : builds test binary
-Makefile ..> ClangFormat : format targets
+Orchestrator --> DefinitionStore : load definitions
+Orchestrator --> ExecutionStore : save/update executions
+Orchestrator --> StepExecutionStore : create/poll-and-claim/update steps
+Orchestrator --> Logic : decide next step
 
-HttpLayer ..> ServiceHpp : future API adapter
-BusinessLogic -up-|> LogicHpp : implements
-DefinitionStoreHpp <.. PersistentStore : future implementation
-ExecutionStoreHpp <.. PersistentStore : future implementation
+Parser --> Json : parses JSON text
+Parser --> DefinitionModel : creates model
+Parser --> DefinitionStore : validated definitions saved by service
 
-note right of ParserHpp
-Validation rules include:
-- required workflow fields
-- ISO-8601 duration strings
-- workflowVersion >= 1
-- non-empty steps
-- unique step names
-- startWorkflowStepName exists
-- no extra top-level fields
-- step-level additional fields allowed
+ExecutionModel --> Json : input/state
+StepExecutionModel --> Json : input/state/output
+StepExecutionModel --> ExecutionModel : uses StepExecutionStatus
+
+MemoryDefinitionStore ..|> DefinitionStore
+MemoryExecutionStore ..|> ExecutionStore
+MemoryStepExecutionStore ..|> StepExecutionStore
+
+MemoryDefinitionStore --> DefinitionModel
+MemoryExecutionStore --> ExecutionModel
+MemoryStepExecutionStore --> StepExecutionModel
+
+ParserTests --> Parser
+DefinitionStoreTests --> MemoryDefinitionStore
+ExecutionStoreTests --> MemoryExecutionStore
+StepExecutionStoreTests --> MemoryStepExecutionStore
+
+ArchitectureDoc ..> Service
+ArchitectureDoc ..> Orchestrator
+ArchitectureDoc ..> DefinitionStore
+ArchitectureDoc ..> ExecutionStore
+ArchitectureDoc ..> StepExecutionStore
+
+SequenceDoc ..> Service
+SequenceDoc ..> Orchestrator
+SequenceDoc ..> StepExecutionStore
+
+note right of StepExecutionStore
+Atomic worker API boundary:
+pollAndClaim(workflowName, workflowVersion, workerId, maxResults)
+
+Backend implementations must atomically:
+1. find Pending matching steps
+2. mark them Claimed
+3. assign workerId
+4. return claimed steps
 end note
 
-note right of LogicHpp
-Workflow definitions do not contain
-nextStep, service, or type.
-Business logic decides the next step
-at execution time.
+note bottom of Service
+WorkflowService exposes two execution surfaces:
+
+Frontend:
+- startWorkflowExecution
+
+Worker:
+- pollAndClaimWorkflowSteps
+- completeWorkflowStep
+- failWorkflowStep
+end note
+
+note bottom of Orchestrator
+WorkflowOrchestrator owns coordination across:
+- workflow definitions
+- workflow executions
+- workflow step executions
+- workflow business logic
 end note
 
 @enduml
