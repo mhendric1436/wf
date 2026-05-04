@@ -31,6 +31,7 @@ OBJ := $(patsubst src/%.cpp,$(OBJ_DIR)/src/%.o,$(SRC))
 
 TEST_SRC := \
 	tests/workflow_parser_tests.cpp \
+	tests/workflow_orchestrator_tests.cpp \
 	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
 	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp \
 	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp \
@@ -64,9 +65,9 @@ FORMAT_FILES := \
 	src/backend/memory/in_memory_workflow_execution_store.cpp \
 	src/backend/memory/in_memory_workflow_step_execution_store.cpp \
 	tests/workflow_parser_tests.cpp \
+	tests/workflow_orchestrator_tests.cpp \
 	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
 	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_tests_updated.cpp \
 	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp \
 	tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
 
