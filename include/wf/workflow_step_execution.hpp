@@ -3,6 +3,7 @@
 #include "wf/json.hpp"
 #include "wf/workflow_execution.hpp"
 
+#include <chrono>
 #include <optional>
 #include <string>
 
@@ -21,6 +22,7 @@ struct WorkflowStepExecution
     StepExecutionStatus status = StepExecutionStatus::Pending;
 
     std::optional<std::string> workerId;
+    std::optional<std::chrono::system_clock::time_point> leaseExpiresAt;
     std::optional<std::string> failureReason;
 
     json::Value input = json::Value::object();

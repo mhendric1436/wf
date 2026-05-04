@@ -6,6 +6,7 @@
 #include "wf/workflow_parser.hpp"
 #include "wf/workflow_step_execution.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -51,11 +52,25 @@ struct PollAndClaimWorkflowStepsRequest
     int workflowVersion = 0;
     std::string workerId;
     std::size_t maxResults = 1;
+    std::chrono::seconds leaseDuration = std::chrono::seconds{60};
 };
 
 struct PollAndClaimWorkflowStepsResponse
 {
     std::vector<WorkflowStepExecution> steps;
+};
+
+struct KeepAliveWorkflowStepRequest
+{
+    std::string workflowExecutionId;
+    std::string stepName;
+    std::string workerId;
+    std::chrono::seconds leaseDuration = std::chrono::seconds{60};
+};
+
+struct KeepAliveWorkflowStepResponse
+{
+    WorkflowStepExecution step;
 };
 
 struct CompleteWorkflowStepRequest
@@ -100,6 +115,9 @@ class WorkflowService
 
     PollAndClaimWorkflowStepsResponse
     pollAndClaimWorkflowSteps(const PollAndClaimWorkflowStepsRequest& request);
+
+    KeepAliveWorkflowStepResponse
+    keepAliveWorkflowStep(const KeepAliveWorkflowStepRequest& request);
 
     CompleteWorkflowStepResponse completeWorkflowStep(const CompleteWorkflowStepRequest& request);
 

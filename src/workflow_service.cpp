@@ -43,7 +43,18 @@ WorkflowService::pollAndClaimWorkflowSteps(const PollAndClaimWorkflowStepsReques
 {
     return PollAndClaimWorkflowStepsResponse{
         .steps = orchestrator_.pollAndClaimWorkflowSteps(
-            request.workflowName, request.workflowVersion, request.workerId, request.maxResults
+            request.workflowName, request.workflowVersion, request.workerId, request.maxResults,
+            request.leaseDuration
+        ),
+    };
+}
+
+KeepAliveWorkflowStepResponse
+WorkflowService::keepAliveWorkflowStep(const KeepAliveWorkflowStepRequest& request)
+{
+    return KeepAliveWorkflowStepResponse{
+        .step = orchestrator_.keepAliveStep(
+            request.workflowExecutionId, request.stepName, request.workerId, request.leaseDuration
         ),
     };
 }

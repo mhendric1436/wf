@@ -2,6 +2,7 @@
 
 #include "wf/store/workflow_step_execution_store.hpp"
 
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -27,7 +28,16 @@ class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepEx
         const std::string& workflowName,
         int workflowVersion,
         const std::string& workerId,
-        std::size_t maxResults
+        std::size_t maxResults,
+        std::chrono::seconds leaseDuration
+    ) override;
+
+    WorkflowStepExecution keepAlive(
+        const std::string& workflowExecutionId,
+        const std::string& stepName,
+        int attempt,
+        const std::string& workerId,
+        std::chrono::seconds leaseDuration
     ) override;
 
     void update(const WorkflowStepExecution& stepExecution) override;
@@ -61,11 +71,21 @@ class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepEx
 
     static void validateStepExecution(const WorkflowStepExecution& stepExecution);
 
+    static void validateWorkerId(const std::string& workerId);
+
+    static void validateLeaseDuration(std::chrono::seconds leaseDuration);
+
     static void validatePollAndClaimRequest(
         const std::string& workflowName,
         int workflowVersion,
         const std::string& workerId,
-        std::size_t maxResults
+        std::size_t maxResults,
+        std::chrono::seconds leaseDuration
+    );
+
+    static bool isClaimable(
+        const WorkflowStepExecution& stepExecution,
+        std::chrono::system_clock::time_point now
     );
 
     mutable std::mutex mutex_;

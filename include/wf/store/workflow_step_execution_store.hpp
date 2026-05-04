@@ -2,6 +2,7 @@
 
 #include "wf/workflow_step_execution.hpp"
 
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,7 +27,16 @@ class WorkflowStepExecutionStore
         const std::string& workflowName,
         int workflowVersion,
         const std::string& workerId,
-        std::size_t maxResults
+        std::size_t maxResults,
+        std::chrono::seconds leaseDuration
+    ) = 0;
+
+    virtual WorkflowStepExecution keepAlive(
+        const std::string& workflowExecutionId,
+        const std::string& stepName,
+        int attempt,
+        const std::string& workerId,
+        std::chrono::seconds leaseDuration
     ) = 0;
 
     virtual void update(const WorkflowStepExecution& stepExecution) = 0;

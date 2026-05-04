@@ -207,6 +207,37 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
     return stepExecutionStore_.pollAndClaim(workflowName, workflowVersion, workerId, maxResults);
 }
 
+WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
+    const std::string& workflowExecutionId,
+    const std::string& stepName,
+    const std::string& workerId,
+    std::chrono::seconds leaseDuration
+)
+{
+    validateExecutionId(workflowExecutionId);
+    validateStepName(stepName);
+    validateWorkerId(workerId);
+    validateLeaseDuration(leaseDuration);
+
+    const auto execution = executionStore_.find(workflowExecutionId);
+
+    if (!execution.has_value())
+    {
+        throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
+    }
+
+    validateExecutionIsRunning(*execution);
+
+    if (execution->currentStepName != stepName)
+    {
+        throw std::runtime_error("step does not match current workflow step: " + stepName);
+    }
+
+    return stepExecutionStore_.keepAlive(
+        workflowExecutionId, stepName, execution->currentStepAttempt, workerId, leaseDuration
+    );
+}
+
 WorkflowExecution WorkflowOrchestrator::completeStep(
     const std::string& workflowExecutionId,
     const std::string& stepName,

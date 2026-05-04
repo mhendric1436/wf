@@ -8,6 +8,7 @@
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_step_execution.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -35,7 +36,15 @@ class WorkflowOrchestrator
         const std::string& workflowName,
         int workflowVersion,
         const std::string& workerId,
-        std::size_t maxResults
+        std::size_t maxResults,
+        std::chrono::seconds leaseDuration
+    );
+
+    WorkflowStepExecution keepAliveStep(
+        const std::string& workflowExecutionId,
+        const std::string& stepName,
+        const std::string& workerId,
+        std::chrono::seconds leaseDuration
     );
 
     WorkflowExecution completeStep(

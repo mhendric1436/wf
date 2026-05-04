@@ -38,10 +38,14 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
     const std::string& workflowName,
     int workflowVersion,
     const std::string& workerId,
-    std::size_t maxResults
+    std::size_t maxResults,
+    std::chrono::seconds leaseDuration
 )
 {
-    validatePollAndClaimRequest(workflowName, workflowVersion, workerId, maxResults);
+    validatePollAndClaimRequest(workflowName, workflowVersion, workerId, maxResults, leaseDuration);
+
+    const auto now = std::chrono::system_clock::now();
+    const auto leaseExpiresAt = now + leaseDuration;
 
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -67,18 +71,83 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
             continue;
         }
 
-        if (stepExecution.status != StepExecutionStatus::Pending)
+        if (!isClaimable(stepExecution, now))
         {
             continue;
         }
 
         stepExecution.status = StepExecutionStatus::Claimed;
         stepExecution.workerId = workerId;
+        stepExecution.leaseExpiresAt = leaseExpiresAt;
+        stepExecution.failureReason.reset();
 
         claimed.push_back(stepExecution);
     }
 
     return claimed;
+}
+
+WorkflowStepExecution InMemoryWorkflowStepExecutionStore::keepAlive(
+    const std::string& workflowExecutionId,
+    const std::string& stepName,
+    int attempt,
+    const std::string& workerId,
+    std::chrono::seconds leaseDuration
+)
+{
+    validateIdentity(workflowExecutionId, stepName, attempt);
+    validateWorkerId(workerId);
+    validateLeaseDuration(leaseDuration);
+
+    const auto now = std::chrono::system_clock::now();
+    const auto newLeaseExpiresAt = now + leaseDuration;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const auto iter = stepExecutions_.find(makeKey(workflowExecutionId, stepName, attempt));
+
+    if (iter == stepExecutions_.end())
+    {
+        throw std::runtime_error(
+            "workflow step execution not found: " + workflowExecutionId + "/" + stepName
+        );
+    }
+
+    auto& stepExecution = iter->second;
+
+    if (stepExecution.status != StepExecutionStatus::Claimed)
+    {
+        throw std::runtime_error(
+            "workflow step execution is not claimed: " + workflowExecutionId + "/" + stepName
+        );
+    }
+
+    if (!stepExecution.workerId.has_value() || stepExecution.workerId.value() != workerId)
+    {
+        throw std::runtime_error(
+            "workflow step execution is claimed by a different worker: " + workflowExecutionId +
+            "/" + stepName
+        );
+    }
+
+    if (!stepExecution.leaseExpiresAt.has_value())
+    {
+        throw std::runtime_error(
+            "workflow step execution does not have an active lease: " + workflowExecutionId + "/" +
+            stepName
+        );
+    }
+
+    if (stepExecution.leaseExpiresAt.value() <= now)
+    {
+        throw std::runtime_error(
+            "workflow step execution lease has expired: " + workflowExecutionId + "/" + stepName
+        );
+    }
+
+    stepExecution.leaseExpiresAt = newLeaseExpiresAt;
+
+    return stepExecution;
 }
 
 void InMemoryWorkflowStepExecutionStore::update(const WorkflowStepExecution& stepExecution)
@@ -185,11 +254,28 @@ void InMemoryWorkflowStepExecutionStore::validateStepExecution(
     }
 }
 
+void InMemoryWorkflowStepExecutionStore::validateWorkerId(const std::string& workerId)
+{
+    if (workerId.empty())
+    {
+        throw std::invalid_argument("workerId must not be empty");
+    }
+}
+
+void InMemoryWorkflowStepExecutionStore::validateLeaseDuration(std::chrono::seconds leaseDuration)
+{
+    if (leaseDuration <= std::chrono::seconds{0})
+    {
+        throw std::invalid_argument("leaseDuration must be greater than 0 seconds");
+    }
+}
+
 void InMemoryWorkflowStepExecutionStore::validatePollAndClaimRequest(
     const std::string& workflowName,
     int workflowVersion,
     const std::string& workerId,
-    std::size_t maxResults
+    std::size_t maxResults,
+    std::chrono::seconds leaseDuration
 )
 {
     if (workflowName.empty())
@@ -202,15 +288,32 @@ void InMemoryWorkflowStepExecutionStore::validatePollAndClaimRequest(
         throw std::invalid_argument("workflowVersion must be greater than or equal to 1");
     }
 
-    if (workerId.empty())
-    {
-        throw std::invalid_argument("workerId must not be empty");
-    }
+    validateWorkerId(workerId);
 
     if (maxResults == 0)
     {
         throw std::invalid_argument("maxResults must be greater than 0");
     }
+
+    validateLeaseDuration(leaseDuration);
+}
+
+bool InMemoryWorkflowStepExecutionStore::isClaimable(
+    const WorkflowStepExecution& stepExecution,
+    std::chrono::system_clock::time_point now
+)
+{
+    if (stepExecution.status == StepExecutionStatus::Pending)
+    {
+        return true;
+    }
+
+    if (stepExecution.status != StepExecutionStatus::Claimed)
+    {
+        return false;
+    }
+
+    return stepExecution.leaseExpiresAt.has_value() && stepExecution.leaseExpiresAt.value() <= now;
 }
 
 } // namespace workflow::backend::memory

@@ -33,7 +33,8 @@ TEST_SRC := \
 	tests/workflow_parser_tests.cpp \
 	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
 	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp
+	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp \
+	tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
 
 TEST_OBJ := $(patsubst tests/%.cpp,$(OBJ_DIR)/tests/%.o,$(TEST_SRC))
 
@@ -65,7 +66,8 @@ FORMAT_FILES := \
 	tests/workflow_parser_tests.cpp \
 	tests/backend/memory/in_memory_workflow_definition_store_tests.cpp \
 	tests/backend/memory/in_memory_workflow_execution_store_tests.cpp \
-	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp
+	tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp \
+	tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
 
 .PHONY: all build test format format-check docs-png clean help
 
