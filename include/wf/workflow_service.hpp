@@ -2,19 +2,15 @@
 
 #include "wf/json.hpp"
 #include "wf/workflow_definition.hpp"
-#include "wf/workflow_execution.hpp"
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_parser.hpp"
+#include "wf/workflow_step_execution.hpp"
 
-#include <optional>
+#include <cstddef>
 #include <string>
 #include <vector>
 
 namespace workflow {
-
-// -----------------------------------------------------------------------------
-// Workflow Definition API
-// -----------------------------------------------------------------------------
 
 struct RegisterWorkflowDefinitionRequest {
     json::Value definitionJson;
@@ -32,13 +28,6 @@ struct ValidateWorkflowDefinitionResponse {
     ValidationResult validation;
 };
 
-// -----------------------------------------------------------------------------
-// StartWorkflowExecution API
-//
-// Intended caller:
-//   Frontend API tier
-// -----------------------------------------------------------------------------
-
 struct StartWorkflowExecutionRequest {
     std::string workflowName;
     int workflowVersion = 0;
@@ -47,31 +36,6 @@ struct StartWorkflowExecutionRequest {
 
 struct StartWorkflowExecutionResponse {
     WorkflowExecution execution;
-};
-
-// -----------------------------------------------------------------------------
-// StepExecution API
-//
-// Intended caller:
-//   Backend worker tier
-// -----------------------------------------------------------------------------
-
-struct WorkflowStepExecution {
-    std::string workflowExecutionId;
-    std::string workflowName;
-    int workflowVersion = 0;
-
-    std::string stepName;
-    int attempt = 0;
-
-    StepExecutionStatus status = StepExecutionStatus::Pending;
-
-    std::optional<std::string> workerId;
-    std::optional<std::string> failureReason;
-
-    json::Value input = json::Value::object();
-    json::Value state = json::Value::object();
-    json::Value output = json::Value::object();
 };
 
 struct PollAndClaimWorkflowStepsRequest {
@@ -107,10 +71,6 @@ struct FailWorkflowStepResponse {
     WorkflowExecution execution;
 };
 
-// -----------------------------------------------------------------------------
-// WorkflowService
-// -----------------------------------------------------------------------------
-
 class WorkflowService {
   public:
     explicit WorkflowService(WorkflowOrchestrator& orchestrator);
@@ -123,12 +83,10 @@ class WorkflowService {
         const RegisterWorkflowDefinitionRequest& request
     );
 
-    // Frontend API tier
     StartWorkflowExecutionResponse startWorkflowExecution(
         const StartWorkflowExecutionRequest& request
     );
 
-    // Backend worker tier
     PollAndClaimWorkflowStepsResponse pollAndClaimWorkflowSteps(
         const PollAndClaimWorkflowStepsRequest& request
     );
