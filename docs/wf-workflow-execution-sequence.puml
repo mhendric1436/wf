@@ -13,6 +13,7 @@ participant "WorkflowOrchestrator" as Orchestrator
 participant "WorkflowDefinitionStore" as DefStore
 participant "WorkflowExecutionStore" as ExecStore
 participant "WorkflowStepExecutionStore" as StepStore
+participant "Duration Utility" as Duration
 participant "WorkflowLogic" as Logic
 
 == Start workflow execution from frontend tier ==
@@ -50,22 +51,75 @@ Request includes:
 - workflowVersion
 - workerId
 - maxResults
+
+No leaseDuration is supplied by caller.
 end note
 
 Service -> Orchestrator : pollAndClaimWorkflowSteps(workflowName, workflowVersion, workerId, maxResults)
 
-Orchestrator -> StepStore : pollAndClaim(workflowName, workflowVersion, workerId, maxResults)
+Orchestrator -> DefStore : find(workflowName, workflowVersion)
+DefStore --> Orchestrator : WorkflowDefinition
+
+loop each step definition
+    Orchestrator -> Duration : calculateLeaseDuration(expectedExecutionTime)
+    Duration --> Orchestrator : leaseDuration = expectedExecutionTime / 3
+end
+
+Orchestrator -> Orchestrator : build leaseDurationsByStepName
+
+Orchestrator -> StepStore : pollAndClaim(workflowName, workflowVersion,\nworkerId, maxResults, leaseDurationsByStepName)
 note right of StepStore
 Atomic backend operation:
 1. find Pending matching steps
-2. mark them Claimed
-3. assign workerId
-4. return claimed steps
+2. reclaim expired Claimed steps
+3. mark them Claimed
+4. assign workerId
+5. assign leaseExpiresAt
+6. return claimed steps
 end note
 
 StepStore --> Orchestrator : vector<WorkflowStepExecution>
 Orchestrator --> Service : PollAndClaimWorkflowStepsResponse
 Service --> Worker : claimed step executions
+
+== Worker keeps a claimed step alive ==
+
+Worker -> Service : keepAliveWorkflowStep(request)
+note right of Worker
+Request includes:
+- workflowExecutionId
+- stepName
+- workerId
+
+No leaseDuration is supplied by caller.
+end note
+
+Service -> Orchestrator : keepAliveStep(workflowExecutionId, stepName, workerId)
+
+Orchestrator -> ExecStore : find(workflowExecutionId)
+ExecStore --> Orchestrator : WorkflowExecution
+
+Orchestrator -> DefStore : find(workflowName, workflowVersion)
+DefStore --> Orchestrator : WorkflowDefinition
+
+Orchestrator -> Orchestrator : find current step definition
+Orchestrator -> Duration : calculateLeaseDuration(step.expectedExecutionTime)
+Duration --> Orchestrator : leaseDuration
+
+Orchestrator -> StepStore : keepAlive(workflowExecutionId, stepName,\nattempt, workerId, leaseDuration)
+note right of StepStore
+Validates:
+- step exists
+- status is Claimed
+- workerId owns claim
+- lease has not expired
+
+Then extends leaseExpiresAt.
+end note
+
+StepStore --> Orchestrator : WorkflowStepExecution
+Orchestrator --> Service : KeepAliveWorkflowStepResponse
+Service --> Worker : updated step lease
 
 == Worker completes a claimed step ==
 
@@ -91,9 +145,9 @@ StepStore --> Orchestrator : WorkflowStepExecution
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
 
-Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim
+Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future
 
-Orchestrator -> StepStore : update(stepExecution)\nstatus = Completed\noutput = stepOutput
+Orchestrator -> StepStore : update(stepExecution)\nstatus = Completed\noutput = stepOutput\nclear leaseExpiresAt
 StepStore --> Orchestrator : ok
 
 Orchestrator -> Logic : decideNextStep(context)
@@ -140,10 +194,10 @@ StepStore --> Orchestrator : WorkflowStepExecution
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
 
-Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim\nfind step definition
+Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future\nfind step definition
 
 alt retry attempts remain
-    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason
+    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\nclear leaseExpiresAt
     StepStore --> Orchestrator : ok
 
     Orchestrator -> Orchestrator : execution.currentStepAttempt += 1
@@ -157,7 +211,7 @@ alt retry attempts remain
     Orchestrator --> Service : WorkflowExecution
     Service --> Worker : FailWorkflowStepResponse
 else max retries exceeded
-    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason
+    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\nclear leaseExpiresAt
     StepStore --> Orchestrator : ok
 
     Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = reason

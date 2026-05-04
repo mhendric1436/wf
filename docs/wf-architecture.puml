@@ -3,23 +3,28 @@ title wf Architecture
 
 skinparam componentStyle rectangle
 skinparam packageStyle rectangle
-
 hide stereotypes
+
+actor "Frontend API Tier" as Frontend
+actor "Backend Worker Tier" as Worker
+
+package "README / Assets" {
+    artifact "README.md" as Readme
+    artifact "images/wf.png" as Logo
+}
 
 package "wf core" {
     component "json.hpp / json.cpp\nCustom JSON Parser" as Json
+    component "duration.hpp / duration.cpp\nISO-8601 Duration Parser\nLease Duration Calculator" as Duration
 
     component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowStep" as DefinitionModel
     component "workflow_parser.hpp / workflow_parser.cpp\nParser + Validator" as Parser
 
     component "workflow_execution.hpp\nWorkflowExecution\nWorkflowExecutionStatus\nStepExecutionStatus" as ExecutionModel
-
-    component "workflow_step_execution.hpp\nWorkflowStepExecution" as StepExecutionModel
+    component "workflow_step_execution.hpp\nWorkflowStepExecution\nworkerId\nleaseExpiresAt" as StepExecutionModel
 
     component "workflow_logic.hpp\nWorkflowLogic\nNextStepDecision" as Logic
-
     component "workflow_orchestrator.hpp / workflow_orchestrator.cpp\nWorkflowOrchestrator" as Orchestrator
-
     component "workflow_service.hpp / workflow_service.cpp\nWorkflowService" as Service
 }
 
@@ -32,14 +37,17 @@ package "store interfaces" {
 package "backend/memory" {
     component "InMemoryWorkflowDefinitionStore" as MemoryDefinitionStore
     component "InMemoryWorkflowExecutionStore" as MemoryExecutionStore
-    component "InMemoryWorkflowStepExecutionStore" as MemoryStepExecutionStore
+    component "InMemoryWorkflowStepExecutionStore\nmutex-protected\npollAndClaim + keepAlive" as MemoryStepExecutionStore
 }
 
 package "tests" {
+    component "duration_tests.cpp" as DurationTests
     component "workflow_parser_tests.cpp" as ParserTests
+    component "workflow_orchestrator_tests.cpp" as OrchestratorTests
     component "backend/memory/\nin_memory_workflow_definition_store_tests.cpp" as DefinitionStoreTests
     component "backend/memory/\nin_memory_workflow_execution_store_tests.cpp" as ExecutionStoreTests
     component "backend/memory/\nin_memory_workflow_step_execution_store_tests.cpp" as StepExecutionStoreTests
+    component "backend/memory/\nin_memory_workflow_step_execution_store_lease_tests.cpp" as LeaseTests
 }
 
 package "docs" {
@@ -47,26 +55,24 @@ package "docs" {
     artifact "wf-workflow-execution-sequence.puml" as SequenceDoc
 }
 
-package "external callers" {
-    actor "Frontend API Tier" as Frontend
-    actor "Backend Worker Tier" as Worker
-}
-
 Frontend --> Service : startWorkflowExecution
-Worker --> Service : pollAndClaimWorkflowSteps\ncompleteWorkflowStep\nfailWorkflowStep
+Worker --> Service : pollAndClaimWorkflowSteps\nkeepAliveWorkflowStep\ncompleteWorkflowStep\nfailWorkflowStep
 
-Service --> Orchestrator : delegates orchestration
+Readme --> Logo : displays
+
+Service --> Orchestrator : delegates workflow operations
 Service --> Parser : validate/register definitions
 
-Orchestrator --> DefinitionStore : load definitions
+Orchestrator --> DefinitionStore : load/save definitions
 Orchestrator --> ExecutionStore : save/update executions
-Orchestrator --> StepExecutionStore : create/poll-and-claim/update steps
+Orchestrator --> StepExecutionStore : create/poll-and-claim/keep-alive/update steps
 Orchestrator --> Logic : decide next step
+Orchestrator --> Duration : calculate lease duration\nfrom step expectedExecutionTime
 
 Parser --> Json : parses JSON text
 Parser --> DefinitionModel : creates model
-Parser --> DefinitionStore : validated definitions saved by service
 
+Duration --> DefinitionModel : uses WorkflowStep.expectedExecutionTime
 ExecutionModel --> Json : input/state
 StepExecutionModel --> Json : input/state/output
 StepExecutionModel --> ExecutionModel : uses StepExecutionStatus
@@ -79,30 +85,49 @@ MemoryDefinitionStore --> DefinitionModel
 MemoryExecutionStore --> ExecutionModel
 MemoryStepExecutionStore --> StepExecutionModel
 
+DurationTests --> Duration
 ParserTests --> Parser
+OrchestratorTests --> Orchestrator
 DefinitionStoreTests --> MemoryDefinitionStore
 ExecutionStoreTests --> MemoryExecutionStore
 StepExecutionStoreTests --> MemoryStepExecutionStore
+LeaseTests --> MemoryStepExecutionStore
 
 ArchitectureDoc ..> Service
 ArchitectureDoc ..> Orchestrator
-ArchitectureDoc ..> DefinitionStore
-ArchitectureDoc ..> ExecutionStore
 ArchitectureDoc ..> StepExecutionStore
-
 SequenceDoc ..> Service
 SequenceDoc ..> Orchestrator
 SequenceDoc ..> StepExecutionStore
 
-note right of StepExecutionStore
-Atomic worker API boundary:
-pollAndClaim(workflowName, workflowVersion, workerId, maxResults)
+note right of Duration
+Lease calculation rule:
 
-Backend implementations must atomically:
-1. find Pending matching steps
-2. mark them Claimed
-3. assign workerId
-4. return claimed steps
+leaseDuration =
+WorkflowStep.expectedExecutionTime / 3
+
+Minimum lease duration:
+1 second
+end note
+
+note right of StepExecutionStore
+Atomic worker operation:
+
+pollAndClaim(
+  workflowName,
+  workflowVersion,
+  workerId,
+  maxResults,
+  leaseDurationsByStepName
+)
+
+Store atomically:
+1. finds Pending matching steps
+2. reclaims expired Claimed steps
+3. marks steps Claimed
+4. assigns workerId
+5. assigns leaseExpiresAt
+6. returns claimed steps
 end note
 
 note bottom of Service
@@ -113,16 +138,20 @@ Frontend:
 
 Worker:
 - pollAndClaimWorkflowSteps
+- keepAliveWorkflowStep
 - completeWorkflowStep
 - failWorkflowStep
+
+Callers do not supply leaseDuration.
 end note
 
 note bottom of Orchestrator
 WorkflowOrchestrator owns coordination across:
-- workflow definitions
+- definitions
 - workflow executions
-- workflow step executions
-- workflow business logic
+- step executions
+- business logic
+- internal lease calculation
 end note
 
 @enduml
