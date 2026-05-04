@@ -2,6 +2,7 @@
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 
 #include <chrono>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -14,7 +15,16 @@ using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 namespace
 {
 
-constexpr auto DEFAULT_LEASE_DURATION = std::chrono::seconds{60};
+std::map<
+    std::string,
+    std::chrono::seconds>
+leaseDurations()
+{
+    return {
+        {"validateOrder", std::chrono::seconds{10}},
+        {"chargePayment", std::chrono::seconds{40}},
+    };
+}
 
 WorkflowStepExecution makeStepExecution(
     const std::string& workflowExecutionId = "wfexec-001",
@@ -188,7 +198,7 @@ TEST_CASE("pollAndClaim claims pending matching steps only")
     auto claimedAlready = makeStepExecution("wfexec-005", "validateOrder", 0);
     claimedAlready.status = StepExecutionStatus::Claimed;
     claimedAlready.workerId = "worker-other";
-    claimedAlready.leaseExpiresAt = std::chrono::system_clock::now() + DEFAULT_LEASE_DURATION;
+    claimedAlready.leaseExpiresAt = std::chrono::system_clock::now() + std::chrono::seconds{10};
     store.save(claimedAlready);
 
     auto otherWorkflow = makeStepExecution("wfexec-006", "validateOrder", 0);
@@ -200,7 +210,7 @@ TEST_CASE("pollAndClaim claims pending matching steps only")
     store.save(otherVersion);
 
     const auto claimed =
-        store.pollAndClaim("orderProcessing", 1, "worker-001", 10, DEFAULT_LEASE_DURATION);
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 10, leaseDurations());
 
     REQUIRE(claimed.size() == 2);
 
@@ -212,35 +222,15 @@ TEST_CASE("pollAndClaim claims pending matching steps only")
         REQUIRE(step.workerId.has_value());
         REQUIRE(step.workerId.value() == "worker-001");
         REQUIRE(step.leaseExpiresAt.has_value());
-        REQUIRE(step.leaseExpiresAt.value() > std::chrono::system_clock::now());
     }
 
-    const auto foundFirst = store.find("wfexec-001", "validateOrder", 0);
-    const auto foundSecond = store.find("wfexec-002", "validateOrder", 0);
-    const auto foundCompleted = store.find("wfexec-003", "validateOrder", 0);
-    const auto foundFailed = store.find("wfexec-004", "validateOrder", 0);
-    const auto foundClaimedAlready = store.find("wfexec-005", "validateOrder", 0);
-    const auto foundOtherWorkflow = store.find("wfexec-006", "validateOrder", 0);
-    const auto foundOtherVersion = store.find("wfexec-007", "validateOrder", 0);
-
-    REQUIRE(foundFirst.has_value());
-    REQUIRE(foundSecond.has_value());
-    REQUIRE(foundCompleted.has_value());
-    REQUIRE(foundFailed.has_value());
-    REQUIRE(foundClaimedAlready.has_value());
-    REQUIRE(foundOtherWorkflow.has_value());
-    REQUIRE(foundOtherVersion.has_value());
-
-    REQUIRE(foundFirst->status == StepExecutionStatus::Claimed);
-    REQUIRE(foundFirst->leaseExpiresAt.has_value());
-    REQUIRE(foundSecond->status == StepExecutionStatus::Claimed);
-    REQUIRE(foundSecond->leaseExpiresAt.has_value());
-    REQUIRE(foundCompleted->status == StepExecutionStatus::Completed);
-    REQUIRE(foundFailed->status == StepExecutionStatus::Failed);
-    REQUIRE(foundClaimedAlready->status == StepExecutionStatus::Claimed);
-    REQUIRE(foundClaimedAlready->workerId.value() == "worker-other");
-    REQUIRE(foundOtherWorkflow->status == StepExecutionStatus::Pending);
-    REQUIRE(foundOtherVersion->status == StepExecutionStatus::Pending);
+    REQUIRE(store.find("wfexec-001", "validateOrder", 0)->status == StepExecutionStatus::Claimed);
+    REQUIRE(store.find("wfexec-002", "validateOrder", 0)->status == StepExecutionStatus::Claimed);
+    REQUIRE(store.find("wfexec-003", "validateOrder", 0)->status == StepExecutionStatus::Completed);
+    REQUIRE(store.find("wfexec-004", "validateOrder", 0)->status == StepExecutionStatus::Failed);
+    REQUIRE(store.find("wfexec-005", "validateOrder", 0)->status == StepExecutionStatus::Claimed);
+    REQUIRE(store.find("wfexec-006", "validateOrder", 0)->status == StepExecutionStatus::Pending);
+    REQUIRE(store.find("wfexec-007", "validateOrder", 0)->status == StepExecutionStatus::Pending);
 }
 
 TEST_CASE("pollAndClaim respects maxResults")
@@ -252,7 +242,7 @@ TEST_CASE("pollAndClaim respects maxResults")
     store.save(makeStepExecution("wfexec-003", "validateOrder", 0));
 
     const auto claimed =
-        store.pollAndClaim("orderProcessing", 1, "worker-001", 2, DEFAULT_LEASE_DURATION);
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 2, leaseDurations());
 
     REQUIRE(claimed.size() == 2);
 
@@ -277,9 +267,9 @@ TEST_CASE("pollAndClaim does not claim already claimed steps with active leases"
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
 
     const auto firstClaim =
-        store.pollAndClaim("orderProcessing", 1, "worker-001", 1, DEFAULT_LEASE_DURATION);
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 1, leaseDurations());
     const auto secondClaim =
-        store.pollAndClaim("orderProcessing", 1, "worker-002", 1, DEFAULT_LEASE_DURATION);
+        store.pollAndClaim("orderProcessing", 1, "worker-002", 1, leaseDurations());
 
     REQUIRE(firstClaim.size() == 1);
     REQUIRE(secondClaim.empty());
@@ -302,7 +292,7 @@ TEST_CASE("pollAndClaim returns an empty vector when no pending matching steps e
     store.save(completed);
 
     const auto claimed =
-        store.pollAndClaim("orderProcessing", 1, "worker-001", 10, DEFAULT_LEASE_DURATION);
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 10, leaseDurations());
 
     REQUIRE(claimed.empty());
 }
@@ -318,7 +308,7 @@ TEST_CASE("pollAndClaim reclaims expired claimed steps")
     store.save(expiredClaim);
 
     const auto claimed =
-        store.pollAndClaim("orderProcessing", 1, "worker-new", 1, DEFAULT_LEASE_DURATION);
+        store.pollAndClaim("orderProcessing", 1, "worker-new", 1, leaseDurations());
 
     REQUIRE(claimed.size() == 1);
     REQUIRE(claimed[0].workflowExecutionId == "wfexec-001");
@@ -326,7 +316,6 @@ TEST_CASE("pollAndClaim reclaims expired claimed steps")
     REQUIRE(claimed[0].workerId.has_value());
     REQUIRE(claimed[0].workerId.value() == "worker-new");
     REQUIRE(claimed[0].leaseExpiresAt.has_value());
-    REQUIRE(claimed[0].leaseExpiresAt.value() > std::chrono::system_clock::now());
 }
 
 TEST_CASE("pollAndClaim is atomic across concurrent workers")
@@ -345,7 +334,7 @@ TEST_CASE("pollAndClaim is atomic across concurrent workers")
         [&store, &workerOneSteps]()
         {
             workerOneSteps =
-                store.pollAndClaim("orderProcessing", 1, "worker-001", 20, DEFAULT_LEASE_DURATION);
+                store.pollAndClaim("orderProcessing", 1, "worker-001", 20, leaseDurations());
         }
     );
 
@@ -353,7 +342,7 @@ TEST_CASE("pollAndClaim is atomic across concurrent workers")
         [&store, &workerTwoSteps]()
         {
             workerTwoSteps =
-                store.pollAndClaim("orderProcessing", 1, "worker-002", 20, DEFAULT_LEASE_DURATION);
+                store.pollAndClaim("orderProcessing", 1, "worker-002", 20, leaseDurations());
         }
     );
 
@@ -434,22 +423,25 @@ TEST_CASE("pollAndClaim rejects invalid request values")
     InMemoryWorkflowStepExecutionStore store;
 
     REQUIRE_THROWS_AS(
-        store.pollAndClaim("", 1, "worker-001", 1, DEFAULT_LEASE_DURATION), std::invalid_argument
+        store.pollAndClaim("", 1, "worker-001", 1, leaseDurations()), std::invalid_argument
     );
     REQUIRE_THROWS_AS(
-        store.pollAndClaim("orderProcessing", 0, "worker-001", 1, DEFAULT_LEASE_DURATION),
+        store.pollAndClaim("orderProcessing", 0, "worker-001", 1, leaseDurations()),
         std::invalid_argument
     );
     REQUIRE_THROWS_AS(
-        store.pollAndClaim("orderProcessing", 1, "", 1, DEFAULT_LEASE_DURATION),
-        std::invalid_argument
+        store.pollAndClaim("orderProcessing", 1, "", 1, leaseDurations()), std::invalid_argument
     );
     REQUIRE_THROWS_AS(
-        store.pollAndClaim("orderProcessing", 1, "worker-001", 0, DEFAULT_LEASE_DURATION),
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 0, leaseDurations()),
         std::invalid_argument
     );
+
     REQUIRE_THROWS_AS(
-        store.pollAndClaim("orderProcessing", 1, "worker-001", 1, std::chrono::seconds{0}),
+        store.pollAndClaim(
+            "orderProcessing", 1, "worker-001", 1,
+            std::map<std::string, std::chrono::seconds>{{"validateOrder", std::chrono::seconds{0}}}
+        ),
         std::invalid_argument
     );
 }

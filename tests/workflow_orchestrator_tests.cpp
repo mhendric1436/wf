@@ -28,8 +28,6 @@ using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 namespace
 {
 
-constexpr auto DEFAULT_LEASE_DURATION = std::chrono::seconds{60};
-
 WorkflowDefinition makeWorkflowDefinition(int validateOrderMaxRetries = 2)
 {
     WorkflowDefinition definition;
@@ -132,12 +130,11 @@ WorkflowExecution startWorkflow(TestContext& context)
 std::vector<WorkflowStepExecution> pollAndClaim(
     TestContext& context,
     const std::string& workerId = "worker-001",
-    std::size_t maxResults = 1,
-    std::chrono::seconds leaseDuration = DEFAULT_LEASE_DURATION
+    std::size_t maxResults = 1
 )
 {
     return context.orchestrator.pollAndClaimWorkflowSteps(
-        "orderProcessing", 1, workerId, maxResults, leaseDuration
+        "orderProcessing", 1, workerId, maxResults
     );
 }
 
@@ -220,7 +217,7 @@ TEST_CASE("orchestrator keep-alive extends the claimed step lease")
     const auto originalLeaseExpiresAt = claimed.leaseExpiresAt.value();
 
     const auto keptAlive = context.orchestrator.keepAliveStep(
-        execution.workflowExecutionId, "validateOrder", "worker-001", std::chrono::seconds{120}
+        execution.workflowExecutionId, "validateOrder", "worker-001"
     );
 
     REQUIRE(keptAlive.status == StepExecutionStatus::Claimed);
@@ -386,8 +383,7 @@ TEST_CASE("orchestrator rejects keep-alive from non-owning worker")
 
     REQUIRE_THROWS_AS(
         context.orchestrator.keepAliveStep(
-            execution.workflowExecutionId, "validateOrder", "worker-002", DEFAULT_LEASE_DURATION
-        ),
+            execution.workflowExecutionId, "validateOrder", "worker-002"),
         std::runtime_error
     );
 }
