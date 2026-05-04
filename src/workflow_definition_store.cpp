@@ -1,4 +1,4 @@
-#include "wf/workflow_definition_store.hpp"
+#include "wf/store/workflow_definition_store.hpp"
 
 namespace workflow
 {
