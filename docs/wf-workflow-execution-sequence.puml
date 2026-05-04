@@ -1,76 +1,172 @@
 @startuml
 hide footbox
 
-title Workflow Execution via WorkflowService
+title wf Workflow Execution Sequence
 
 autonumber
 
-actor Client
+actor "Frontend API Tier" as Frontend
+actor "Backend Worker Tier" as Worker
+
 participant "WorkflowService" as Service
 participant "WorkflowOrchestrator" as Orchestrator
 participant "WorkflowDefinitionStore" as DefStore
 participant "WorkflowExecutionStore" as ExecStore
+participant "WorkflowStepExecutionStore" as StepStore
 participant "WorkflowLogic" as Logic
 
-== Start workflow execution ==
+== Start workflow execution from frontend tier ==
 
-Client -> Service : startWorkflowExecution(request)
+Frontend -> Service : startWorkflowExecution(request)
+note right of Frontend
+Frontend starts workflow executions only.
+It does not execute workflow steps.
+end note
+
 Service -> Orchestrator : startWorkflow(workflowName, workflowVersion, input)
+
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
+
 Orchestrator -> Orchestrator : create WorkflowExecution\nstatus = Running\ncurrentStepName = startWorkflowStepName\ncurrentStepAttempt = 0
+
 Orchestrator -> ExecStore : save(execution)
 ExecStore --> Orchestrator : ok
+
+Orchestrator -> Orchestrator : create first WorkflowStepExecution\nstatus = Pending\nstepName = startWorkflowStepName\nattempt = 0
+
+Orchestrator -> StepStore : save(stepExecution)
+StepStore --> Orchestrator : ok
+
 Orchestrator --> Service : WorkflowExecution
-Service --> Client : StartWorkflowExecutionResponse
+Service --> Frontend : StartWorkflowExecutionResponse
 
-== Complete current step and advance ==
+== Worker atomically polls and claims work ==
 
-Client -> Service : completeWorkflowStep(request)
-Service -> Orchestrator : completeStep(workflowExecutionId, stepName, stepOutput)
+Worker -> Service : pollAndClaimWorkflowSteps(request)
+note right of Worker
+Request includes:
+- workflowName
+- workflowVersion
+- workerId
+- maxResults
+end note
+
+Service -> Orchestrator : pollAndClaimWorkflowSteps(workflowName, workflowVersion, workerId, maxResults)
+
+Orchestrator -> StepStore : pollAndClaim(workflowName, workflowVersion, workerId, maxResults)
+note right of StepStore
+Atomic backend operation:
+1. find Pending matching steps
+2. mark them Claimed
+3. assign workerId
+4. return claimed steps
+end note
+
+StepStore --> Orchestrator : vector<WorkflowStepExecution>
+Orchestrator --> Service : PollAndClaimWorkflowStepsResponse
+Service --> Worker : claimed step executions
+
+== Worker completes a claimed step ==
+
+Worker -> Worker : execute business step outside WorkflowService
+
+Worker -> Service : completeWorkflowStep(request)
+note right of Worker
+Request includes:
+- workflowExecutionId
+- stepName
+- workerId
+- stepOutput
+end note
+
+Service -> Orchestrator : completeStep(workflowExecutionId, stepName, workerId, stepOutput)
+
 Orchestrator -> ExecStore : find(workflowExecutionId)
 ExecStore --> Orchestrator : WorkflowExecution
+
+Orchestrator -> StepStore : find(workflowExecutionId, stepName, attempt)
+StepStore --> Orchestrator : WorkflowStepExecution
+
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
+
+Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim
+
+Orchestrator -> StepStore : update(stepExecution)\nstatus = Completed\noutput = stepOutput
+StepStore --> Orchestrator : ok
+
 Orchestrator -> Logic : decideNextStep(context)
 Logic --> Orchestrator : NextStepDecision
 
 alt workflow complete
-    Orchestrator -> Orchestrator : status = Completed\nstate = updatedState
+    Orchestrator -> Orchestrator : execution.status = Completed\nexecution.state = updatedState
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
     Orchestrator --> Service : WorkflowExecution
-    Service --> Client : CompleteWorkflowStepResponse
+    Service --> Worker : CompleteWorkflowStepResponse
 else next step selected
-    Orchestrator -> Orchestrator : validate nextStepName exists\ncurrentStepName = nextStepName\ncurrentStepAttempt = 0\nstate = updatedState
+    Orchestrator -> Orchestrator : validate nextStepName exists\nexecution.currentStepName = nextStepName\nexecution.currentStepAttempt = 0\nexecution.state = updatedState
+
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
+
+    Orchestrator -> StepStore : save(nextStepExecution)\nstatus = Pending\nstepName = nextStepName\nattempt = 0
+    StepStore --> Orchestrator : ok
+
     Orchestrator --> Service : WorkflowExecution
-    Service --> Client : CompleteWorkflowStepResponse
+    Service --> Worker : CompleteWorkflowStepResponse
 end
 
-== Fail current step ==
+== Worker fails a claimed step ==
 
-Client -> Service : failWorkflowStep(request)
-Service -> Orchestrator : failStep(workflowExecutionId, stepName, reason)
+Worker -> Service : failWorkflowStep(request)
+note right of Worker
+Request includes:
+- workflowExecutionId
+- stepName
+- workerId
+- reason
+end note
+
+Service -> Orchestrator : failStep(workflowExecutionId, stepName, workerId, reason)
+
 Orchestrator -> ExecStore : find(workflowExecutionId)
 ExecStore --> Orchestrator : WorkflowExecution
+
+Orchestrator -> StepStore : find(workflowExecutionId, stepName, attempt)
+StepStore --> Orchestrator : WorkflowStepExecution
+
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
-Orchestrator -> Orchestrator : find current step definition
+
+Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim\nfind step definition
 
 alt retry attempts remain
-    Orchestrator -> Orchestrator : currentStepAttempt += 1\nstatus = Running
+    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason
+    StepStore --> Orchestrator : ok
+
+    Orchestrator -> Orchestrator : execution.currentStepAttempt += 1
+
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
+
+    Orchestrator -> StepStore : save(retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt
+    StepStore --> Orchestrator : ok
+
     Orchestrator --> Service : WorkflowExecution
-    Service --> Client : FailWorkflowStepResponse
+    Service --> Worker : FailWorkflowStepResponse
 else max retries exceeded
-    Orchestrator -> Orchestrator : status = Failed\nfailureReason = reason
+    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason
+    StepStore --> Orchestrator : ok
+
+    Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = reason
+
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
+
     Orchestrator --> Service : WorkflowExecution
-    Service --> Client : FailWorkflowStepResponse
+    Service --> Worker : FailWorkflowStepResponse
 end
 
 @enduml
