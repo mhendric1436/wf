@@ -3,6 +3,7 @@
 #include "wf/workflow_step_execution.hpp"
 
 #include <chrono>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -28,7 +29,9 @@ class WorkflowStepExecutionStore
         int workflowVersion,
         const std::string& workerId,
         std::size_t maxResults,
-        std::chrono::seconds leaseDuration
+        const std::map<
+            std::string,
+            std::chrono::seconds>& leaseDurationsByStepName
     ) = 0;
 
     virtual WorkflowStepExecution keepAlive(

@@ -3,12 +3,11 @@
 #include <chrono>
 #include <string>
 
-namespace workflow {
+namespace workflow
+{
 
 std::chrono::seconds parseIso8601DurationToSeconds(const std::string& value);
 
-std::chrono::seconds calculateLeaseDuration(
-    const std::string& expectedExecutionTime
-);
+std::chrono::seconds calculateLeaseDuration(const std::string& expectedExecutionTime);
 
 } // namespace workflow

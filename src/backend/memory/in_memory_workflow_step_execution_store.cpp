@@ -39,13 +39,16 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
     int workflowVersion,
     const std::string& workerId,
     std::size_t maxResults,
-    std::chrono::seconds leaseDuration
+    const std::map<
+        std::string,
+        std::chrono::seconds>& leaseDurationsByStepName
 )
 {
-    validatePollAndClaimRequest(workflowName, workflowVersion, workerId, maxResults, leaseDuration);
+    validatePollAndClaimRequest(
+        workflowName, workflowVersion, workerId, maxResults, leaseDurationsByStepName
+    );
 
     const auto now = std::chrono::system_clock::now();
-    const auto leaseExpiresAt = now + leaseDuration;
 
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -76,9 +79,18 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
             continue;
         }
 
+        const auto durationIter = leaseDurationsByStepName.find(stepExecution.stepName);
+
+        if (durationIter == leaseDurationsByStepName.end())
+        {
+            continue;
+        }
+
+        validateLeaseDuration(durationIter->second);
+
         stepExecution.status = StepExecutionStatus::Claimed;
         stepExecution.workerId = workerId;
-        stepExecution.leaseExpiresAt = leaseExpiresAt;
+        stepExecution.leaseExpiresAt = now + durationIter->second;
         stepExecution.failureReason.reset();
 
         claimed.push_back(stepExecution);
@@ -275,7 +287,9 @@ void InMemoryWorkflowStepExecutionStore::validatePollAndClaimRequest(
     int workflowVersion,
     const std::string& workerId,
     std::size_t maxResults,
-    std::chrono::seconds leaseDuration
+    const std::map<
+        std::string,
+        std::chrono::seconds>& leaseDurationsByStepName
 )
 {
     if (workflowName.empty())
@@ -295,7 +309,15 @@ void InMemoryWorkflowStepExecutionStore::validatePollAndClaimRequest(
         throw std::invalid_argument("maxResults must be greater than 0");
     }
 
-    validateLeaseDuration(leaseDuration);
+    for (const auto& [stepName, leaseDuration] : leaseDurationsByStepName)
+    {
+        if (stepName.empty())
+        {
+            throw std::invalid_argument("lease duration step name must not be empty");
+        }
+
+        validateLeaseDuration(leaseDuration);
+    }
 }
 
 bool InMemoryWorkflowStepExecutionStore::isClaimable(

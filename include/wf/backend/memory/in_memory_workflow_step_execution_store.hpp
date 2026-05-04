@@ -29,7 +29,9 @@ class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepEx
         int workflowVersion,
         const std::string& workerId,
         std::size_t maxResults,
-        std::chrono::seconds leaseDuration
+        const std::map<
+            std::string,
+            std::chrono::seconds>& leaseDurationsByStepName
     ) override;
 
     WorkflowStepExecution keepAlive(
@@ -80,7 +82,9 @@ class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepEx
         int workflowVersion,
         const std::string& workerId,
         std::size_t maxResults,
-        std::chrono::seconds leaseDuration
+        const std::map<
+            std::string,
+            std::chrono::seconds>& leaseDurationsByStepName
     );
 
     static bool isClaimable(

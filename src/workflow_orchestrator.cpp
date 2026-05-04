@@ -1,6 +1,10 @@
 #include "wf/workflow_orchestrator.hpp"
 
+#include "wf/duration.hpp"
+
 #include <algorithm>
+#include <chrono>
+#include <map>
 #include <stdexcept>
 
 namespace workflow
@@ -70,6 +74,14 @@ void validateWorkflowNameAndVersion(
     }
 }
 
+void validateExecutionId(const std::string& workflowExecutionId)
+{
+    if (workflowExecutionId.empty())
+    {
+        throw std::invalid_argument("workflowExecutionId must not be empty");
+    }
+}
+
 void validateWorkerId(const std::string& workerId)
 {
     if (workerId.empty())
@@ -101,6 +113,8 @@ void validateClaimOwnership(
     const std::string& workerId
 )
 {
+    const auto now = std::chrono::system_clock::now();
+
     if (stepExecution.status != StepExecutionStatus::Claimed)
     {
         throw std::runtime_error(
@@ -121,22 +135,47 @@ void validateClaimOwnership(
             "workflow step execution is claimed by a different worker: " + stepExecution.stepName
         );
     }
-}
 
-void validateExecutionId(const std::string& workflowExecutionId)
-{
-    if (workflowExecutionId.empty())
+    if (!stepExecution.leaseExpiresAt.has_value())
     {
-        throw std::invalid_argument("workflowExecutionId must not be empty");
+        throw std::runtime_error(
+            "workflow step execution does not have an active lease: " + stepExecution.stepName
+        );
+    }
+
+    if (stepExecution.leaseExpiresAt.value() <= now)
+    {
+        throw std::runtime_error(
+            "workflow step execution lease has expired: " + stepExecution.stepName
+        );
     }
 }
 
-void validateLeaseDuration(std::chrono::seconds leaseDuration)
+std::chrono::seconds leaseDurationForStep(const WorkflowStep& step)
 {
-    if (leaseDuration <= std::chrono::seconds{0})
+    if (!step.expectedExecutionTime.has_value())
     {
-        throw std::invalid_argument("leaseDuration must be greater than 0 seconds");
+        throw std::runtime_error(
+            "step expectedExecutionTime is required for lease calculation: " + step.name
+        );
     }
+
+    return calculateLeaseDuration(step.expectedExecutionTime.value());
+}
+
+std::map<
+    std::string,
+    std::chrono::seconds>
+buildLeaseDurationsByStepName(const WorkflowDefinition& definition)
+{
+    std::map<std::string, std::chrono::seconds> durations;
+
+    for (const auto& step : definition.steps)
+    {
+        durations[step.name] = leaseDurationForStep(step);
+    }
+
+    return durations;
 }
 
 WorkflowStepExecution makeStepExecution(
@@ -209,35 +248,40 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
     const std::string& workflowName,
     int workflowVersion,
     const std::string& workerId,
-    std::size_t maxResults,
-    std::chrono::seconds leaseDuration
+    std::size_t maxResults
 )
 {
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
     validateWorkerId(workerId);
-    validateLeaseDuration(leaseDuration);
 
     if (maxResults == 0)
     {
         throw std::invalid_argument("maxResults must be greater than 0");
     }
 
+    const auto definition = definitionStore_.find(workflowName, workflowVersion);
+
+    if (!definition.has_value())
+    {
+        throw std::runtime_error("workflow definition not found: " + workflowName);
+    }
+
+    const auto leaseDurationsByStepName = buildLeaseDurationsByStepName(*definition);
+
     return stepExecutionStore_.pollAndClaim(
-        workflowName, workflowVersion, workerId, maxResults, leaseDuration
+        workflowName, workflowVersion, workerId, maxResults, leaseDurationsByStepName
     );
 }
 
 WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
     const std::string& workflowExecutionId,
     const std::string& stepName,
-    const std::string& workerId,
-    std::chrono::seconds leaseDuration
+    const std::string& workerId
 )
 {
     validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
-    validateLeaseDuration(leaseDuration);
 
     const auto execution = executionStore_.find(workflowExecutionId);
 
@@ -253,6 +297,17 @@ WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
         throw std::runtime_error("step does not match current workflow step: " + stepName);
     }
 
+    const auto definition =
+        definitionStore_.find(execution->workflowName, execution->workflowVersion);
+
+    if (!definition.has_value())
+    {
+        throw std::runtime_error("workflow definition not found: " + execution->workflowName);
+    }
+
+    const auto& stepDefinition = findStepDefinition(*definition, stepName);
+    const auto leaseDuration = leaseDurationForStep(stepDefinition);
+
     return stepExecutionStore_.keepAlive(
         workflowExecutionId, stepName, execution->currentStepAttempt, workerId, leaseDuration
     );
@@ -265,11 +320,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     const json::Value& stepOutput
 )
 {
-    if (workflowExecutionId.empty())
-    {
-        throw std::invalid_argument("workflowExecutionId must not be empty");
-    }
-
+    validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
 
@@ -310,6 +361,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
 
     updatedStepExecution.status = StepExecutionStatus::Completed;
     updatedStepExecution.output = stepOutput;
+    updatedStepExecution.leaseExpiresAt.reset();
     stepExecutionStore_.update(updatedStepExecution);
 
     StepCompletionContext context;
@@ -363,11 +415,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     const std::string& reason
 )
 {
-    if (workflowExecutionId.empty())
-    {
-        throw std::invalid_argument("workflowExecutionId must not be empty");
-    }
-
+    validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
 
@@ -411,6 +459,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
 
     updatedStepExecution.status = StepExecutionStatus::Failed;
     updatedStepExecution.failureReason = reason;
+    updatedStepExecution.leaseExpiresAt.reset();
     stepExecutionStore_.update(updatedStepExecution);
 
     if (updatedExecution.currentStepAttempt < maxRetries)
