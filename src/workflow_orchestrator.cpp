@@ -3,13 +3,16 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace workflow {
-namespace {
+namespace workflow
+{
+namespace
+{
 
 std::string makeWorkflowExecutionId(
     const std::string& workflowName,
     int workflowVersion
-) {
+)
+{
     static int counter = 0;
     ++counter;
 
@@ -20,16 +23,15 @@ std::string makeWorkflowExecutionId(
 const WorkflowStep& findStepDefinition(
     const WorkflowDefinition& definition,
     const std::string& stepName
-) {
+)
+{
     const auto iter = std::find_if(
-        definition.steps.begin(),
-        definition.steps.end(),
-        [&stepName](const WorkflowStep& step) {
-            return step.name == stepName;
-        }
+        definition.steps.begin(), definition.steps.end(),
+        [&stepName](const WorkflowStep& step) { return step.name == stepName; }
     );
 
-    if (iter == definition.steps.end()) {
+    if (iter == definition.steps.end())
+    {
         throw std::runtime_error("workflow step is not defined: " + stepName);
     }
 
@@ -39,65 +41,82 @@ const WorkflowStep& findStepDefinition(
 bool stepDefinitionExists(
     const WorkflowDefinition& definition,
     const std::string& stepName
-) {
+)
+{
     return std::any_of(
-        definition.steps.begin(),
-        definition.steps.end(),
-        [&stepName](const WorkflowStep& step) {
-            return step.name == stepName;
-        }
+        definition.steps.begin(), definition.steps.end(),
+        [&stepName](const WorkflowStep& step) { return step.name == stepName; }
     );
 }
 
-int maxRetriesForStep(const WorkflowStep& step) {
+int maxRetriesForStep(const WorkflowStep& step)
+{
     return step.maxRetries.value_or(0);
 }
 
-void validateWorkflowNameAndVersion(const std::string& workflowName, int workflowVersion) {
-    if (workflowName.empty()) {
+void validateWorkflowNameAndVersion(
+    const std::string& workflowName,
+    int workflowVersion
+)
+{
+    if (workflowName.empty())
+    {
         throw std::invalid_argument("workflowName must not be empty");
     }
 
-    if (workflowVersion < 1) {
+    if (workflowVersion < 1)
+    {
         throw std::invalid_argument("workflowVersion must be greater than or equal to 1");
     }
 }
 
-void validateWorkerId(const std::string& workerId) {
-    if (workerId.empty()) {
+void validateWorkerId(const std::string& workerId)
+{
+    if (workerId.empty())
+    {
         throw std::invalid_argument("workerId must not be empty");
     }
 }
 
-void validateStepName(const std::string& stepName) {
-    if (stepName.empty()) {
+void validateStepName(const std::string& stepName)
+{
+    if (stepName.empty())
+    {
         throw std::invalid_argument("stepName must not be empty");
     }
 }
 
-void validateExecutionIsRunning(const WorkflowExecution& execution) {
-    if (execution.status != WorkflowExecutionStatus::Running) {
-        throw std::runtime_error("workflow execution is not running: " + execution.workflowExecutionId);
+void validateExecutionIsRunning(const WorkflowExecution& execution)
+{
+    if (execution.status != WorkflowExecutionStatus::Running)
+    {
+        throw std::runtime_error(
+            "workflow execution is not running: " + execution.workflowExecutionId
+        );
     }
 }
 
 void validateClaimOwnership(
     const WorkflowStepExecution& stepExecution,
     const std::string& workerId
-) {
-    if (stepExecution.status != StepExecutionStatus::Claimed) {
+)
+{
+    if (stepExecution.status != StepExecutionStatus::Claimed)
+    {
         throw std::runtime_error(
             "workflow step execution is not claimed: " + stepExecution.stepName
         );
     }
 
-    if (!stepExecution.workerId.has_value()) {
+    if (!stepExecution.workerId.has_value())
+    {
         throw std::runtime_error(
             "workflow step execution does not have a worker claim: " + stepExecution.stepName
         );
     }
 
-    if (stepExecution.workerId.value() != workerId) {
+    if (stepExecution.workerId.value() != workerId)
+    {
         throw std::runtime_error(
             "workflow step execution is claimed by a different worker: " + stepExecution.stepName
         );
@@ -108,7 +127,8 @@ WorkflowStepExecution makeStepExecution(
     const WorkflowExecution& execution,
     const std::string& stepName,
     int attempt
-) {
+)
+{
     WorkflowStepExecution stepExecution;
     stepExecution.workflowExecutionId = execution.workflowExecutionId;
     stepExecution.workflowName = execution.workflowName;
@@ -133,18 +153,22 @@ WorkflowOrchestrator::WorkflowOrchestrator(
     : definitionStore_(definitionStore),
       executionStore_(executionStore),
       stepExecutionStore_(stepExecutionStore),
-      workflowLogic_(workflowLogic) {}
+      workflowLogic_(workflowLogic)
+{
+}
 
 WorkflowExecution WorkflowOrchestrator::startWorkflow(
     const std::string& workflowName,
     int workflowVersion,
     const json::Value& input
-) {
+)
+{
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
 
     const auto definition = definitionStore_.find(workflowName, workflowVersion);
 
-    if (!definition.has_value()) {
+    if (!definition.has_value())
+    {
         throw std::runtime_error("workflow definition not found: " + workflowName);
     }
 
@@ -160,9 +184,7 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
 
     executionStore_.save(execution);
 
-    stepExecutionStore_.save(
-        makeStepExecution(execution, definition->startWorkflowStepName, 0)
-    );
+    stepExecutionStore_.save(makeStepExecution(execution, definition->startWorkflowStepName, 0));
 
     return execution;
 }
@@ -172,20 +194,17 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
     int workflowVersion,
     const std::string& workerId,
     std::size_t maxResults
-) {
+)
+{
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
     validateWorkerId(workerId);
 
-    if (maxResults == 0) {
+    if (maxResults == 0)
+    {
         throw std::invalid_argument("maxResults must be greater than 0");
     }
 
-    return stepExecutionStore_.pollAndClaim(
-        workflowName,
-        workflowVersion,
-        workerId,
-        maxResults
-    );
+    return stepExecutionStore_.pollAndClaim(workflowName, workflowVersion, workerId, maxResults);
 }
 
 WorkflowExecution WorkflowOrchestrator::completeStep(
@@ -193,8 +212,10 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     const std::string& stepName,
     const std::string& workerId,
     const json::Value& stepOutput
-) {
-    if (workflowExecutionId.empty()) {
+)
+{
+    if (workflowExecutionId.empty())
+    {
         throw std::invalid_argument("workflowExecutionId must not be empty");
     }
 
@@ -203,36 +224,36 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
 
     const auto execution = executionStore_.find(workflowExecutionId);
 
-    if (!execution.has_value()) {
+    if (!execution.has_value())
+    {
         throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
     }
 
     WorkflowExecution updatedExecution = *execution;
     validateExecutionIsRunning(updatedExecution);
 
-    if (updatedExecution.currentStepName != stepName) {
+    if (updatedExecution.currentStepName != stepName)
+    {
         throw std::runtime_error("step does not match current workflow step: " + stepName);
     }
 
     const auto stepExecution = stepExecutionStore_.find(
-        workflowExecutionId,
-        stepName,
-        updatedExecution.currentStepAttempt
+        workflowExecutionId, stepName, updatedExecution.currentStepAttempt
     );
 
-    if (!stepExecution.has_value()) {
+    if (!stepExecution.has_value())
+    {
         throw std::runtime_error("workflow step execution not found: " + stepName);
     }
 
     WorkflowStepExecution updatedStepExecution = *stepExecution;
     validateClaimOwnership(updatedStepExecution, workerId);
 
-    const auto definition = definitionStore_.find(
-        updatedExecution.workflowName,
-        updatedExecution.workflowVersion
-    );
+    const auto definition =
+        definitionStore_.find(updatedExecution.workflowName, updatedExecution.workflowVersion);
 
-    if (!definition.has_value()) {
+    if (!definition.has_value())
+    {
         throw std::runtime_error("workflow definition not found: " + updatedExecution.workflowName);
     }
 
@@ -253,19 +274,24 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
 
     updatedExecution.state = decision.updatedState;
 
-    if (decision.workflowComplete) {
+    if (decision.workflowComplete)
+    {
         updatedExecution.status = WorkflowExecutionStatus::Completed;
         executionStore_.update(updatedExecution);
         return updatedExecution;
     }
 
-    if (!decision.nextStepName.has_value()) {
-        throw std::runtime_error("next step decision must provide nextStepName or workflowComplete");
+    if (!decision.nextStepName.has_value())
+    {
+        throw std::runtime_error(
+            "next step decision must provide nextStepName or workflowComplete"
+        );
     }
 
     const auto nextStepName = decision.nextStepName.value();
 
-    if (!stepDefinitionExists(*definition, nextStepName)) {
+    if (!stepDefinitionExists(*definition, nextStepName))
+    {
         throw std::runtime_error("next step is not defined: " + nextStepName);
     }
 
@@ -284,8 +310,10 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     const std::string& stepName,
     const std::string& workerId,
     const std::string& reason
-) {
-    if (workflowExecutionId.empty()) {
+)
+{
+    if (workflowExecutionId.empty())
+    {
         throw std::invalid_argument("workflowExecutionId must not be empty");
     }
 
@@ -294,36 +322,36 @@ WorkflowExecution WorkflowOrchestrator::failStep(
 
     const auto execution = executionStore_.find(workflowExecutionId);
 
-    if (!execution.has_value()) {
+    if (!execution.has_value())
+    {
         throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
     }
 
     WorkflowExecution updatedExecution = *execution;
     validateExecutionIsRunning(updatedExecution);
 
-    if (updatedExecution.currentStepName != stepName) {
+    if (updatedExecution.currentStepName != stepName)
+    {
         throw std::runtime_error("step does not match current workflow step: " + stepName);
     }
 
     const auto stepExecution = stepExecutionStore_.find(
-        workflowExecutionId,
-        stepName,
-        updatedExecution.currentStepAttempt
+        workflowExecutionId, stepName, updatedExecution.currentStepAttempt
     );
 
-    if (!stepExecution.has_value()) {
+    if (!stepExecution.has_value())
+    {
         throw std::runtime_error("workflow step execution not found: " + stepName);
     }
 
     WorkflowStepExecution updatedStepExecution = *stepExecution;
     validateClaimOwnership(updatedStepExecution, workerId);
 
-    const auto definition = definitionStore_.find(
-        updatedExecution.workflowName,
-        updatedExecution.workflowVersion
-    );
+    const auto definition =
+        definitionStore_.find(updatedExecution.workflowName, updatedExecution.workflowVersion);
 
-    if (!definition.has_value()) {
+    if (!definition.has_value())
+    {
         throw std::runtime_error("workflow definition not found: " + updatedExecution.workflowName);
     }
 
@@ -334,7 +362,8 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     updatedStepExecution.failureReason = reason;
     stepExecutionStore_.update(updatedStepExecution);
 
-    if (updatedExecution.currentStepAttempt < maxRetries) {
+    if (updatedExecution.currentStepAttempt < maxRetries)
+    {
         ++updatedExecution.currentStepAttempt;
 
         executionStore_.update(updatedExecution);
@@ -353,27 +382,33 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     return updatedExecution;
 }
 
-WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() {
+WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore()
+{
     return definitionStore_;
 }
 
-const WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() const {
+const WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore() const
+{
     return definitionStore_;
 }
 
-WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() {
+WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore()
+{
     return executionStore_;
 }
 
-const WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() const {
+const WorkflowExecutionStore& WorkflowOrchestrator::workflowExecutionStore() const
+{
     return executionStore_;
 }
 
-WorkflowStepExecutionStore& WorkflowOrchestrator::workflowStepExecutionStore() {
+WorkflowStepExecutionStore& WorkflowOrchestrator::workflowStepExecutionStore()
+{
     return stepExecutionStore_;
 }
 
-const WorkflowStepExecutionStore& WorkflowOrchestrator::workflowStepExecutionStore() const {
+const WorkflowStepExecutionStore& WorkflowOrchestrator::workflowStepExecutionStore() const
+{
     return stepExecutionStore_;
 }
 

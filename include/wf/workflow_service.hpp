@@ -10,94 +10,100 @@
 #include <string>
 #include <vector>
 
-namespace workflow {
+namespace workflow
+{
 
-struct RegisterWorkflowDefinitionRequest {
+struct RegisterWorkflowDefinitionRequest
+{
     json::Value definitionJson;
 };
 
-struct RegisterWorkflowDefinitionResponse {
+struct RegisterWorkflowDefinitionResponse
+{
     WorkflowDefinition definition;
 };
 
-struct ValidateWorkflowDefinitionRequest {
+struct ValidateWorkflowDefinitionRequest
+{
     json::Value definitionJson;
 };
 
-struct ValidateWorkflowDefinitionResponse {
+struct ValidateWorkflowDefinitionResponse
+{
     ValidationResult validation;
 };
 
-struct StartWorkflowExecutionRequest {
+struct StartWorkflowExecutionRequest
+{
     std::string workflowName;
     int workflowVersion = 0;
     json::Value input = json::Value::object();
 };
 
-struct StartWorkflowExecutionResponse {
+struct StartWorkflowExecutionResponse
+{
     WorkflowExecution execution;
 };
 
-struct PollAndClaimWorkflowStepsRequest {
+struct PollAndClaimWorkflowStepsRequest
+{
     std::string workflowName;
     int workflowVersion = 0;
     std::string workerId;
     std::size_t maxResults = 1;
 };
 
-struct PollAndClaimWorkflowStepsResponse {
+struct PollAndClaimWorkflowStepsResponse
+{
     std::vector<WorkflowStepExecution> steps;
 };
 
-struct CompleteWorkflowStepRequest {
+struct CompleteWorkflowStepRequest
+{
     std::string workflowExecutionId;
     std::string stepName;
     std::string workerId;
     json::Value stepOutput = json::Value::object();
 };
 
-struct CompleteWorkflowStepResponse {
+struct CompleteWorkflowStepResponse
+{
     WorkflowExecution execution;
 };
 
-struct FailWorkflowStepRequest {
+struct FailWorkflowStepRequest
+{
     std::string workflowExecutionId;
     std::string stepName;
     std::string workerId;
     std::string reason;
 };
 
-struct FailWorkflowStepResponse {
+struct FailWorkflowStepResponse
+{
     WorkflowExecution execution;
 };
 
-class WorkflowService {
+class WorkflowService
+{
   public:
     explicit WorkflowService(WorkflowOrchestrator& orchestrator);
 
-    ValidateWorkflowDefinitionResponse validateWorkflowDefinition(
-        const ValidateWorkflowDefinitionRequest& request
-    ) const;
+    ValidateWorkflowDefinitionResponse
+    validateWorkflowDefinition(const ValidateWorkflowDefinitionRequest& request) const;
 
-    RegisterWorkflowDefinitionResponse registerWorkflowDefinition(
-        const RegisterWorkflowDefinitionRequest& request
-    );
+    RegisterWorkflowDefinitionResponse
+    registerWorkflowDefinition(const RegisterWorkflowDefinitionRequest& request);
 
-    StartWorkflowExecutionResponse startWorkflowExecution(
-        const StartWorkflowExecutionRequest& request
-    );
+    StartWorkflowExecutionResponse
+    startWorkflowExecution(const StartWorkflowExecutionRequest& request);
 
-    PollAndClaimWorkflowStepsResponse pollAndClaimWorkflowSteps(
-        const PollAndClaimWorkflowStepsRequest& request
-    );
+    PollAndClaimWorkflowStepsResponse
+    pollAndClaimWorkflowSteps(const PollAndClaimWorkflowStepsRequest& request);
 
-    CompleteWorkflowStepResponse completeWorkflowStep(
-        const CompleteWorkflowStepRequest& request
-    );
+    CompleteWorkflowStepResponse completeWorkflowStep(const CompleteWorkflowStepRequest& request);
 
-    FailWorkflowStepResponse failWorkflowStep(
-        const FailWorkflowStepRequest& request
-    );
+    FailWorkflowStepResponse failWorkflowStep(const FailWorkflowStepRequest& request);
 
   private:
     WorkflowOrchestrator& orchestrator_;

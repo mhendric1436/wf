@@ -6,9 +6,11 @@
 #include <string>
 #include <vector>
 
-namespace workflow {
+namespace workflow
+{
 
-class WorkflowStepExecutionStore {
+class WorkflowStepExecutionStore
+{
   public:
     virtual ~WorkflowStepExecutionStore() = default;
 

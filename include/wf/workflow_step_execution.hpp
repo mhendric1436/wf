@@ -6,9 +6,11 @@
 #include <optional>
 #include <string>
 
-namespace workflow {
+namespace workflow
+{
 
-struct WorkflowStepExecution {
+struct WorkflowStepExecution
+{
     std::string workflowExecutionId;
     std::string workflowName;
     int workflowVersion = 0;

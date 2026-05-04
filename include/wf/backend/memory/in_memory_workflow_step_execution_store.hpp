@@ -9,9 +9,11 @@
 #include <tuple>
 #include <vector>
 
-namespace workflow::backend::memory {
+namespace workflow::backend::memory
+{
 
-class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepExecutionStore {
+class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepExecutionStore
+{
   public:
     void save(const WorkflowStepExecution& stepExecution) override;
 

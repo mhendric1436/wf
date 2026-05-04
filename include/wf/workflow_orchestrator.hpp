@@ -12,9 +12,11 @@
 #include <string>
 #include <vector>
 
-namespace workflow {
+namespace workflow
+{
 
-class WorkflowOrchestrator {
+class WorkflowOrchestrator
+{
   public:
     WorkflowOrchestrator(
         WorkflowDefinitionStore& definitionStore,

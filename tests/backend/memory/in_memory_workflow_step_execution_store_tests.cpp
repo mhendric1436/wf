@@ -10,13 +10,15 @@ using workflow::StepExecutionStatus;
 using workflow::WorkflowStepExecution;
 using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 
-namespace {
+namespace
+{
 
 WorkflowStepExecution makeStepExecution(
     const std::string& workflowExecutionId = "wfexec-001",
     const std::string& stepName = "validateOrder",
     int attempt = 0
-) {
+)
+{
     WorkflowStepExecution stepExecution;
     stepExecution.workflowExecutionId = workflowExecutionId;
     stepExecution.workflowName = "orderProcessing";
@@ -32,7 +34,8 @@ WorkflowStepExecution makeStepExecution(
 
 } // namespace
 
-TEST_CASE("in-memory workflow step execution store saves and finds step executions") {
+TEST_CASE("in-memory workflow step execution store saves and finds step executions")
+{
     InMemoryWorkflowStepExecutionStore store;
     const auto stepExecution = makeStepExecution();
 
@@ -52,7 +55,8 @@ TEST_CASE("in-memory workflow step execution store saves and finds step executio
     REQUIRE(store.size() == 1);
 }
 
-TEST_CASE("in-memory workflow step execution store returns nullopt for missing step execution") {
+TEST_CASE("in-memory workflow step execution store returns nullopt for missing step execution")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     const auto found = store.find("wfexec-001", "missingStep", 0);
@@ -60,7 +64,8 @@ TEST_CASE("in-memory workflow step execution store returns nullopt for missing s
     REQUIRE_FALSE(found.has_value());
 }
 
-TEST_CASE("in-memory workflow step execution store save replaces existing step execution") {
+TEST_CASE("in-memory workflow step execution store save replaces existing step execution")
+{
     InMemoryWorkflowStepExecutionStore store;
     auto stepExecution = makeStepExecution();
 
@@ -79,7 +84,8 @@ TEST_CASE("in-memory workflow step execution store save replaces existing step e
     REQUIRE(store.size() == 1);
 }
 
-TEST_CASE("in-memory workflow step execution store stores attempts independently") {
+TEST_CASE("in-memory workflow step execution store stores attempts independently")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
@@ -95,7 +101,8 @@ TEST_CASE("in-memory workflow step execution store stores attempts independently
     REQUIRE(store.size() == 2);
 }
 
-TEST_CASE("in-memory workflow step execution store updates existing step execution") {
+TEST_CASE("in-memory workflow step execution store updates existing step execution")
+{
     InMemoryWorkflowStepExecutionStore store;
     auto stepExecution = makeStepExecution();
 
@@ -116,14 +123,16 @@ TEST_CASE("in-memory workflow step execution store updates existing step executi
     REQUIRE(found->output.at("valid").asBool());
 }
 
-TEST_CASE("in-memory workflow step execution store update throws for missing step execution") {
+TEST_CASE("in-memory workflow step execution store update throws for missing step execution")
+{
     InMemoryWorkflowStepExecutionStore store;
     const auto stepExecution = makeStepExecution();
 
     REQUIRE_THROWS_AS(store.update(stepExecution), std::runtime_error);
 }
 
-TEST_CASE("in-memory workflow step execution store removes step executions") {
+TEST_CASE("in-memory workflow step execution store removes step executions")
+{
     InMemoryWorkflowStepExecutionStore store;
     store.save(makeStepExecution());
 
@@ -133,7 +142,8 @@ TEST_CASE("in-memory workflow step execution store removes step executions") {
     REQUIRE(store.size() == 0);
 }
 
-TEST_CASE("in-memory workflow step execution store remove is idempotent for missing step execution") {
+TEST_CASE("in-memory workflow step execution store remove is idempotent for missing step execution")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     store.remove("wfexec-001", "validateOrder", 0);
@@ -141,7 +151,8 @@ TEST_CASE("in-memory workflow step execution store remove is idempotent for miss
     REQUIRE(store.size() == 0);
 }
 
-TEST_CASE("in-memory workflow step execution store clears all step executions") {
+TEST_CASE("in-memory workflow step execution store clears all step executions")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
@@ -156,7 +167,8 @@ TEST_CASE("in-memory workflow step execution store clears all step executions") 
     REQUIRE_FALSE(store.find("wfexec-002", "chargePayment", 0).has_value());
 }
 
-TEST_CASE("pollAndClaim claims pending matching steps only") {
+TEST_CASE("pollAndClaim claims pending matching steps only")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
@@ -187,7 +199,8 @@ TEST_CASE("pollAndClaim claims pending matching steps only") {
 
     REQUIRE(claimed.size() == 2);
 
-    for (const auto& step : claimed) {
+    for (const auto& step : claimed)
+    {
         REQUIRE(step.workflowName == "orderProcessing");
         REQUIRE(step.workflowVersion == 1);
         REQUIRE(step.status == StepExecutionStatus::Claimed);
@@ -221,7 +234,8 @@ TEST_CASE("pollAndClaim claims pending matching steps only") {
     REQUIRE(foundOtherVersion->status == StepExecutionStatus::Pending);
 }
 
-TEST_CASE("pollAndClaim respects maxResults") {
+TEST_CASE("pollAndClaim respects maxResults")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
@@ -233,11 +247,13 @@ TEST_CASE("pollAndClaim respects maxResults") {
     REQUIRE(claimed.size() == 2);
 
     std::size_t stillPending = 0;
-    for (const auto& workflowExecutionId : {"wfexec-001", "wfexec-002", "wfexec-003"}) {
+    for (const auto& workflowExecutionId : {"wfexec-001", "wfexec-002", "wfexec-003"})
+    {
         const auto found = store.find(workflowExecutionId, "validateOrder", 0);
         REQUIRE(found.has_value());
 
-        if (found->status == StepExecutionStatus::Pending) {
+        if (found->status == StepExecutionStatus::Pending)
+        {
             ++stillPending;
         }
     }
@@ -245,7 +261,8 @@ TEST_CASE("pollAndClaim respects maxResults") {
     REQUIRE(stillPending == 1);
 }
 
-TEST_CASE("pollAndClaim does not claim already claimed steps") {
+TEST_CASE("pollAndClaim does not claim already claimed steps")
+{
     InMemoryWorkflowStepExecutionStore store;
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
 
@@ -263,7 +280,8 @@ TEST_CASE("pollAndClaim does not claim already claimed steps") {
     REQUIRE(found->workerId.value() == "worker-001");
 }
 
-TEST_CASE("pollAndClaim returns an empty vector when no pending matching steps exist") {
+TEST_CASE("pollAndClaim returns an empty vector when no pending matching steps exist")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     auto completed = makeStepExecution("wfexec-001", "validateOrder", 0);
@@ -275,23 +293,27 @@ TEST_CASE("pollAndClaim returns an empty vector when no pending matching steps e
     REQUIRE(claimed.empty());
 }
 
-TEST_CASE("pollAndClaim is atomic across concurrent workers") {
+TEST_CASE("pollAndClaim is atomic across concurrent workers")
+{
     InMemoryWorkflowStepExecutionStore store;
 
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 20; ++i)
+    {
         store.save(makeStepExecution("wfexec-" + std::to_string(i), "validateOrder", 0));
     }
 
     std::vector<WorkflowStepExecution> workerOneSteps;
     std::vector<WorkflowStepExecution> workerTwoSteps;
 
-    std::thread workerOne([&store, &workerOneSteps]() {
-        workerOneSteps = store.pollAndClaim("orderProcessing", 1, "worker-001", 20);
-    });
+    std::thread workerOne(
+        [&store, &workerOneSteps]()
+        { workerOneSteps = store.pollAndClaim("orderProcessing", 1, "worker-001", 20); }
+    );
 
-    std::thread workerTwo([&store, &workerTwoSteps]() {
-        workerTwoSteps = store.pollAndClaim("orderProcessing", 1, "worker-002", 20);
-    });
+    std::thread workerTwo(
+        [&store, &workerTwoSteps]()
+        { workerTwoSteps = store.pollAndClaim("orderProcessing", 1, "worker-002", 20); }
+    );
 
     workerOne.join();
     workerTwo.join();
@@ -301,18 +323,24 @@ TEST_CASE("pollAndClaim is atomic across concurrent workers") {
     std::size_t workerOnePersisted = 0;
     std::size_t workerTwoPersisted = 0;
 
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 20; ++i)
+    {
         const auto found = store.find("wfexec-" + std::to_string(i), "validateOrder", 0);
 
         REQUIRE(found.has_value());
         REQUIRE(found->status == StepExecutionStatus::Claimed);
         REQUIRE(found->workerId.has_value());
 
-        if (found->workerId.value() == "worker-001") {
+        if (found->workerId.value() == "worker-001")
+        {
             ++workerOnePersisted;
-        } else if (found->workerId.value() == "worker-002") {
+        }
+        else if (found->workerId.value() == "worker-002")
+        {
             ++workerTwoPersisted;
-        } else {
+        }
+        else
+        {
             FAIL("unexpected worker id");
         }
     }
@@ -320,7 +348,8 @@ TEST_CASE("pollAndClaim is atomic across concurrent workers") {
     REQUIRE((workerOnePersisted + workerTwoPersisted) == 20);
 }
 
-TEST_CASE("in-memory workflow step execution store rejects invalid step execution values") {
+TEST_CASE("in-memory workflow step execution store rejects invalid step execution values")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     auto emptyExecutionId = makeStepExecution("", "validateOrder", 0);
@@ -344,7 +373,8 @@ TEST_CASE("in-memory workflow step execution store rejects invalid step executio
     REQUIRE_THROWS_AS(store.update(invalidWorkflowVersion), std::invalid_argument);
 }
 
-TEST_CASE("in-memory workflow step execution store rejects invalid identity values") {
+TEST_CASE("in-memory workflow step execution store rejects invalid identity values")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     REQUIRE_THROWS_AS(store.find("", "validateOrder", 0), std::invalid_argument);
@@ -356,11 +386,16 @@ TEST_CASE("in-memory workflow step execution store rejects invalid identity valu
     REQUIRE_THROWS_AS(store.remove("wfexec-001", "validateOrder", -1), std::invalid_argument);
 }
 
-TEST_CASE("pollAndClaim rejects invalid request values") {
+TEST_CASE("pollAndClaim rejects invalid request values")
+{
     InMemoryWorkflowStepExecutionStore store;
 
     REQUIRE_THROWS_AS(store.pollAndClaim("", 1, "worker-001", 1), std::invalid_argument);
-    REQUIRE_THROWS_AS(store.pollAndClaim("orderProcessing", 0, "worker-001", 1), std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        store.pollAndClaim("orderProcessing", 0, "worker-001", 1), std::invalid_argument
+    );
     REQUIRE_THROWS_AS(store.pollAndClaim("orderProcessing", 1, "", 1), std::invalid_argument);
-    REQUIRE_THROWS_AS(store.pollAndClaim("orderProcessing", 1, "worker-001", 0), std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 0), std::invalid_argument
+    );
 }
