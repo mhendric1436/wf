@@ -123,6 +123,22 @@ void validateClaimOwnership(
     }
 }
 
+void validateExecutionId(const std::string& workflowExecutionId)
+{
+    if (workflowExecutionId.empty())
+    {
+        throw std::invalid_argument("workflowExecutionId must not be empty");
+    }
+}
+
+void validateLeaseDuration(std::chrono::seconds leaseDuration)
+{
+    if (leaseDuration <= std::chrono::seconds{0})
+    {
+        throw std::invalid_argument("leaseDuration must be greater than 0 seconds");
+    }
+}
+
 WorkflowStepExecution makeStepExecution(
     const WorkflowExecution& execution,
     const std::string& stepName,
@@ -193,18 +209,22 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
     const std::string& workflowName,
     int workflowVersion,
     const std::string& workerId,
-    std::size_t maxResults
+    std::size_t maxResults,
+    std::chrono::seconds leaseDuration
 )
 {
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
     validateWorkerId(workerId);
+    validateLeaseDuration(leaseDuration);
 
     if (maxResults == 0)
     {
         throw std::invalid_argument("maxResults must be greater than 0");
     }
 
-    return stepExecutionStore_.pollAndClaim(workflowName, workflowVersion, workerId, maxResults);
+    return stepExecutionStore_.pollAndClaim(
+        workflowName, workflowVersion, workerId, maxResults, leaseDuration
+    );
 }
 
 WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
