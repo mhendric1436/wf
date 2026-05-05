@@ -39,9 +39,9 @@ all: test
 
 build: $(LIB)
 
-$(LIB): $(OBJ)
+$(LIB): format $(OBJ)
 	@mkdir -p $(dir $@)
-	ar rcs $@ $^
+	ar rcs $@ $(OBJ)
 
 $(TEST_BIN): $(LIB) $(TEST_OBJ) $(CATCH_OBJ)
 	@mkdir -p $(dir $@)
