@@ -52,14 +52,14 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::vector<WorkflowStepExecution> claimed;
-    claimed.reserve(maxResults);
+    std::vector<WorkflowStepExecution> result;
+    result.reserve(maxResults);
 
     for (auto& [key, stepExecution] : stepExecutions_)
     {
         (void)key;
 
-        if (claimed.size() >= maxResults)
+        if (result.size() >= maxResults)
         {
             break;
         }
@@ -88,15 +88,15 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
 
         validateLeaseDuration(durationIter->second);
 
-        stepExecution.status = StepExecutionStatus::Claimed;
+        stepExecution.status = StepExecutionStatus::Running;
         stepExecution.workerId = workerId;
         stepExecution.leaseExpiresAt = now + durationIter->second;
         stepExecution.failureReason.reset();
 
-        claimed.push_back(stepExecution);
+        result.push_back(stepExecution);
     }
 
-    return claimed;
+    return result;
 }
 
 WorkflowStepExecution InMemoryWorkflowStepExecutionStore::keepAlive(
@@ -127,18 +127,18 @@ WorkflowStepExecution InMemoryWorkflowStepExecutionStore::keepAlive(
 
     auto& stepExecution = iter->second;
 
-    if (stepExecution.status != StepExecutionStatus::Claimed)
+    if (stepExecution.status != StepExecutionStatus::Running)
     {
         throw std::runtime_error(
-            "workflow step execution is not claimed: " + workflowExecutionId + "/" + stepName
+            "workflow step execution is not running: " + workflowExecutionId + "/" + stepName
         );
     }
 
     if (!stepExecution.workerId.has_value() || stepExecution.workerId.value() != workerId)
     {
         throw std::runtime_error(
-            "workflow step execution is claimed by a different worker: " + workflowExecutionId +
-            "/" + stepName
+            "workflow step execution is owned by a different worker: " + workflowExecutionId + "/" +
+            stepName
         );
     }
 
@@ -330,7 +330,7 @@ bool InMemoryWorkflowStepExecutionStore::isClaimable(
         return true;
     }
 
-    if (stepExecution.status != StepExecutionStatus::Claimed)
+    if (stepExecution.status != StepExecutionStatus::Running)
     {
         return false;
     }

@@ -58,7 +58,7 @@ TEST_CASE("pollAndClaim assigns a lease expiration")
     const auto afterClaim = std::chrono::system_clock::now();
 
     REQUIRE(claimed.size() == 1);
-    REQUIRE(claimed[0].status == StepExecutionStatus::Claimed);
+    REQUIRE(claimed[0].status == StepExecutionStatus::Running);
     REQUIRE(claimed[0].workerId.has_value());
     REQUIRE(claimed[0].workerId.value() == "worker-001");
     REQUIRE(claimed[0].leaseExpiresAt.has_value());
@@ -83,7 +83,7 @@ TEST_CASE("keepAlive extends an active lease for the owning worker")
     const auto keptAlive =
         store.keepAlive("wfexec-001", "validateOrder", 0, "worker-001", std::chrono::seconds{60});
 
-    REQUIRE(keptAlive.status == StepExecutionStatus::Claimed);
+    REQUIRE(keptAlive.status == StepExecutionStatus::Running);
     REQUIRE(keptAlive.workerId.has_value());
     REQUIRE(keptAlive.workerId.value() == "worker-001");
     REQUIRE(keptAlive.leaseExpiresAt.has_value());
@@ -139,7 +139,7 @@ TEST_CASE("pollAndClaim reclaims an expired claimed step")
         store.pollAndClaim("orderProcessing", 1, "worker-002", 1, leaseDurations());
 
     REQUIRE(reclaimed.size() == 1);
-    REQUIRE(reclaimed[0].status == StepExecutionStatus::Claimed);
+    REQUIRE(reclaimed[0].status == StepExecutionStatus::Running);
     REQUIRE(reclaimed[0].workerId.has_value());
     REQUIRE(reclaimed[0].workerId.value() == "worker-002");
     REQUIRE(reclaimed[0].leaseExpiresAt.has_value());

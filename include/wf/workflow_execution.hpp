@@ -19,7 +19,6 @@ enum class WorkflowExecutionStatus
 enum class StepExecutionStatus
 {
     Pending,
-    Claimed,
     Running,
     Completed,
     Failed,

@@ -341,7 +341,7 @@ TEST_CASE("service poll-and-claim claims the initial step with a lease")
     REQUIRE(response.steps.size() == 1);
     REQUIRE(response.steps[0].workflowExecutionId == executionId);
     REQUIRE(response.steps[0].stepName == "validateOrder");
-    REQUIRE(response.steps[0].status == StepExecutionStatus::Claimed);
+    REQUIRE(response.steps[0].status == StepExecutionStatus::Running);
     REQUIRE(response.steps[0].workerId.has_value());
     REQUIRE(response.steps[0].workerId.value() == "worker-001");
     REQUIRE(response.steps[0].leaseExpiresAt.has_value());
@@ -382,7 +382,7 @@ TEST_CASE("service keep-alive extends the claimed step lease")
         }
     );
 
-    REQUIRE(response.step.status == StepExecutionStatus::Claimed);
+    REQUIRE(response.step.status == StepExecutionStatus::Running);
     REQUIRE(response.step.leaseExpiresAt.has_value());
     REQUIRE(response.step.leaseExpiresAt.value() > before.value());
 }

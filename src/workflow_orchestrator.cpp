@@ -115,10 +115,10 @@ void validateClaimOwnership(
 {
     const auto now = std::chrono::system_clock::now();
 
-    if (stepExecution.status != StepExecutionStatus::Claimed)
+    if (stepExecution.status != StepExecutionStatus::Running)
     {
         throw std::runtime_error(
-            "workflow step execution is not claimed: " + stepExecution.stepName
+            "workflow step execution is not running: " + stepExecution.stepName
         );
     }
 
@@ -132,7 +132,7 @@ void validateClaimOwnership(
     if (stepExecution.workerId.value() != workerId)
     {
         throw std::runtime_error(
-            "workflow step execution is claimed by a different worker: " + stepExecution.stepName
+            "workflow step execution is owned by a different worker: " + stepExecution.stepName
         );
     }
 

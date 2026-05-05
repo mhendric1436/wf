@@ -192,7 +192,7 @@ TEST_CASE("orchestrator poll-and-claim claims a pending step with a lease")
     REQUIRE(claimed.size() == 1);
     REQUIRE(claimed[0].workflowExecutionId == execution.workflowExecutionId);
     REQUIRE(claimed[0].stepName == "validateOrder");
-    REQUIRE(claimed[0].status == StepExecutionStatus::Claimed);
+    REQUIRE(claimed[0].status == StepExecutionStatus::Running);
     REQUIRE(claimed[0].workerId.has_value());
     REQUIRE(claimed[0].workerId.value() == "worker-001");
     REQUIRE(claimed[0].leaseExpiresAt.has_value());
@@ -202,7 +202,7 @@ TEST_CASE("orchestrator poll-and-claim claims a pending step with a lease")
         context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
 
     REQUIRE(storedStep.has_value());
-    REQUIRE(storedStep->status == StepExecutionStatus::Claimed);
+    REQUIRE(storedStep->status == StepExecutionStatus::Running);
     REQUIRE(storedStep->workerId.value() == "worker-001");
     REQUIRE(storedStep->leaseExpiresAt.has_value());
 }
@@ -220,7 +220,7 @@ TEST_CASE("orchestrator keep-alive extends the claimed step lease")
         execution.workflowExecutionId, "validateOrder", "worker-001"
     );
 
-    REQUIRE(keptAlive.status == StepExecutionStatus::Claimed);
+    REQUIRE(keptAlive.status == StepExecutionStatus::Running);
     REQUIRE(keptAlive.workerId.has_value());
     REQUIRE(keptAlive.workerId.value() == "worker-001");
     REQUIRE(keptAlive.leaseExpiresAt.has_value());

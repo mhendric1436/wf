@@ -195,11 +195,11 @@ TEST_CASE("pollAndClaim claims pending matching steps only")
     failed.status = StepExecutionStatus::Failed;
     store.save(failed);
 
-    auto claimedAlready = makeStepExecution("wfexec-005", "validateOrder", 0);
-    claimedAlready.status = StepExecutionStatus::Claimed;
-    claimedAlready.workerId = "worker-other";
-    claimedAlready.leaseExpiresAt = std::chrono::system_clock::now() + std::chrono::seconds{10};
-    store.save(claimedAlready);
+    auto alreadyRunning = makeStepExecution("wfexec-005", "validateOrder", 0);
+    alreadyRunning.status = StepExecutionStatus::Running;
+    alreadyRunning.workerId = "worker-other";
+    alreadyRunning.leaseExpiresAt = std::chrono::system_clock::now() + std::chrono::seconds{10};
+    store.save(alreadyRunning);
 
     auto otherWorkflow = makeStepExecution("wfexec-006", "validateOrder", 0);
     otherWorkflow.workflowName = "invoiceProcessing";
@@ -218,17 +218,17 @@ TEST_CASE("pollAndClaim claims pending matching steps only")
     {
         REQUIRE(step.workflowName == "orderProcessing");
         REQUIRE(step.workflowVersion == 1);
-        REQUIRE(step.status == StepExecutionStatus::Claimed);
+        REQUIRE(step.status == StepExecutionStatus::Running);
         REQUIRE(step.workerId.has_value());
         REQUIRE(step.workerId.value() == "worker-001");
         REQUIRE(step.leaseExpiresAt.has_value());
     }
 
-    REQUIRE(store.find("wfexec-001", "validateOrder", 0)->status == StepExecutionStatus::Claimed);
-    REQUIRE(store.find("wfexec-002", "validateOrder", 0)->status == StepExecutionStatus::Claimed);
+    REQUIRE(store.find("wfexec-001", "validateOrder", 0)->status == StepExecutionStatus::Running);
+    REQUIRE(store.find("wfexec-002", "validateOrder", 0)->status == StepExecutionStatus::Running);
     REQUIRE(store.find("wfexec-003", "validateOrder", 0)->status == StepExecutionStatus::Completed);
     REQUIRE(store.find("wfexec-004", "validateOrder", 0)->status == StepExecutionStatus::Failed);
-    REQUIRE(store.find("wfexec-005", "validateOrder", 0)->status == StepExecutionStatus::Claimed);
+    REQUIRE(store.find("wfexec-005", "validateOrder", 0)->status == StepExecutionStatus::Running);
     REQUIRE(store.find("wfexec-006", "validateOrder", 0)->status == StepExecutionStatus::Pending);
     REQUIRE(store.find("wfexec-007", "validateOrder", 0)->status == StepExecutionStatus::Pending);
 }
@@ -261,7 +261,7 @@ TEST_CASE("pollAndClaim respects maxResults")
     REQUIRE(stillPending == 1);
 }
 
-TEST_CASE("pollAndClaim does not claim already claimed steps with active leases")
+TEST_CASE("pollAndClaim does not claim already running steps with active leases")
 {
     InMemoryWorkflowStepExecutionStore store;
     store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
@@ -277,7 +277,7 @@ TEST_CASE("pollAndClaim does not claim already claimed steps with active leases"
     const auto found = store.find("wfexec-001", "validateOrder", 0);
 
     REQUIRE(found.has_value());
-    REQUIRE(found->status == StepExecutionStatus::Claimed);
+    REQUIRE(found->status == StepExecutionStatus::Running);
     REQUIRE(found->workerId.has_value());
     REQUIRE(found->workerId.value() == "worker-001");
     REQUIRE(found->leaseExpiresAt.has_value());
@@ -297,22 +297,22 @@ TEST_CASE("pollAndClaim returns an empty vector when no pending matching steps e
     REQUIRE(claimed.empty());
 }
 
-TEST_CASE("pollAndClaim reclaims expired claimed steps")
+TEST_CASE("pollAndClaim reclaims expired running steps")
 {
     InMemoryWorkflowStepExecutionStore store;
 
-    auto expiredClaim = makeStepExecution("wfexec-001", "validateOrder", 0);
-    expiredClaim.status = StepExecutionStatus::Claimed;
-    expiredClaim.workerId = "worker-old";
-    expiredClaim.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
-    store.save(expiredClaim);
+    auto expiredStep = makeStepExecution("wfexec-001", "validateOrder", 0);
+    expiredStep.status = StepExecutionStatus::Running;
+    expiredStep.workerId = "worker-old";
+    expiredStep.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    store.save(expiredStep);
 
     const auto claimed =
         store.pollAndClaim("orderProcessing", 1, "worker-new", 1, leaseDurations());
 
     REQUIRE(claimed.size() == 1);
     REQUIRE(claimed[0].workflowExecutionId == "wfexec-001");
-    REQUIRE(claimed[0].status == StepExecutionStatus::Claimed);
+    REQUIRE(claimed[0].status == StepExecutionStatus::Running);
     REQUIRE(claimed[0].workerId.has_value());
     REQUIRE(claimed[0].workerId.value() == "worker-new");
     REQUIRE(claimed[0].leaseExpiresAt.has_value());
@@ -359,7 +359,7 @@ TEST_CASE("pollAndClaim is atomic across concurrent workers")
         const auto found = store.find("wfexec-" + std::to_string(i), "validateOrder", 0);
 
         REQUIRE(found.has_value());
-        REQUIRE(found->status == StepExecutionStatus::Claimed);
+        REQUIRE(found->status == StepExecutionStatus::Running);
         REQUIRE(found->workerId.has_value());
         REQUIRE(found->leaseExpiresAt.has_value());
 
