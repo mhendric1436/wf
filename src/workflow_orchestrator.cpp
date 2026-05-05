@@ -182,6 +182,7 @@ WorkflowStepExecution makeStepExecution(
     stepExecution.input = execution.input;
     stepExecution.state = execution.state;
     stepExecution.output = json::Value::object();
+    stepExecution.createdAt = std::chrono::system_clock::now();
     return stepExecution;
 }
 
@@ -350,6 +351,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     updatedStepExecution.status = StepExecutionStatus::Completed;
     updatedStepExecution.output = stepOutput;
     updatedStepExecution.leaseExpiresAt.reset();
+    updatedStepExecution.completedAt = std::chrono::system_clock::now();
     stepExecutionStore_.update(updatedStepExecution);
 
     StepCompletionContext context;
@@ -448,6 +450,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     updatedStepExecution.status = StepExecutionStatus::Failed;
     updatedStepExecution.failureReason = reason;
     updatedStepExecution.leaseExpiresAt.reset();
+    updatedStepExecution.completedAt = std::chrono::system_clock::now();
     stepExecutionStore_.update(updatedStepExecution);
 
     if (updatedExecution.currentStepAttempt < maxRetries)
@@ -536,6 +539,7 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
         failedStep.status = StepExecutionStatus::Failed;
         failedStep.failureReason = "lease expired";
         failedStep.leaseExpiresAt.reset();
+        failedStep.completedAt = std::chrono::system_clock::now();
         stepExecutionStore_.update(failedStep);
 
         WorkflowExecution updatedExecution = *execution;

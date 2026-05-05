@@ -6,9 +6,14 @@
 #include "wf/workflow_parser.hpp"
 #include "wf/workflow_step_execution.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace workflow
@@ -126,19 +131,13 @@ struct ListWorkflowDefinitionsResponse
     std::vector<WorkflowDefinitionKey> definitions;
 };
 
-struct SweepExpiredLeasesRequest
-{
-};
-
-struct SweepExpiredLeasesResponse
-{
-    SweepResult result;
-};
-
 class WorkflowService
 {
   public:
-    explicit WorkflowService(WorkflowOrchestrator& orchestrator);
+    explicit WorkflowService(
+        WorkflowOrchestrator& orchestrator,
+        std::chrono::seconds sweepInterval = std::chrono::seconds{30}
+    );
 
     ValidateWorkflowDefinitionResponse
     validateWorkflowDefinition(const ValidateWorkflowDefinitionRequest& request) const;
@@ -159,6 +158,8 @@ class WorkflowService
 
     FailWorkflowStepResponse failWorkflowStep(const FailWorkflowStepRequest& request);
 
+    ~WorkflowService();
+
     CancelWorkflowResponse cancelWorkflow(const CancelWorkflowRequest& request);
 
     GetWorkflowExecutionResponse
@@ -167,10 +168,15 @@ class WorkflowService
     ListWorkflowDefinitionsResponse
     listWorkflowDefinitions(const ListWorkflowDefinitionsRequest& request) const;
 
-    SweepExpiredLeasesResponse sweepExpiredLeases(const SweepExpiredLeasesRequest& request);
-
   private:
+    void runSweepLoop();
+
     WorkflowOrchestrator& orchestrator_;
+    std::chrono::seconds sweepInterval_;
+    std::atomic<bool> stopping_{false};
+    std::mutex sweepMutex_;
+    std::condition_variable sweepCv_;
+    std::thread sweepThread_;
 };
 
 } // namespace workflow

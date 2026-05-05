@@ -509,6 +509,22 @@ TEST_CASE("cancelByExecution throws for an empty execution id")
     REQUIRE_THROWS_AS(store.cancelByExecution(""), std::invalid_argument);
 }
 
+TEST_CASE("cancelByExecution sets completedAt on canceled steps")
+{
+    InMemoryWorkflowStepExecutionStore store;
+    store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
+
+    const auto before = std::chrono::system_clock::now();
+    store.cancelByExecution("wfexec-001");
+    const auto after = std::chrono::system_clock::now();
+
+    const auto canceled = store.find("wfexec-001", "validateOrder", 0);
+    REQUIRE(canceled.has_value());
+    REQUIRE(canceled->completedAt.has_value());
+    REQUIRE(canceled->completedAt.value() >= before);
+    REQUIRE(canceled->completedAt.value() <= after);
+}
+
 TEST_CASE("findExpiredRunning returns empty when no steps exist")
 {
     InMemoryWorkflowStepExecutionStore store;

@@ -193,3 +193,41 @@ TEST_CASE("keepAlive rejects invalid lease duration")
         std::invalid_argument
     );
 }
+
+TEST_CASE("pollAndClaim sets startedAt within the claim window")
+{
+    InMemoryWorkflowStepExecutionStore store;
+    store.save(makeStepExecution());
+
+    const auto before = std::chrono::system_clock::now();
+    const auto claimed =
+        store.pollAndClaim("orderProcessing", 1, "worker-001", 1, leaseDurations());
+    const auto after = std::chrono::system_clock::now();
+
+    REQUIRE(claimed.size() == 1);
+    REQUIRE(claimed[0].startedAt.has_value());
+    REQUIRE(claimed[0].startedAt.value() >= before);
+    REQUIRE(claimed[0].startedAt.value() <= after);
+}
+
+TEST_CASE("pollAndClaim resets startedAt on reclaim")
+{
+    InMemoryWorkflowStepExecutionStore store;
+    store.save(makeStepExecution());
+
+    store.pollAndClaim("orderProcessing", 1, "worker-001", 1, leaseDurations());
+
+    auto found = store.find("wfexec-001", "validateOrder", 0);
+    found->leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    store.update(*found);
+
+    const auto before = std::chrono::system_clock::now();
+    const auto reclaimed =
+        store.pollAndClaim("orderProcessing", 1, "worker-002", 1, leaseDurations());
+    const auto after = std::chrono::system_clock::now();
+
+    REQUIRE(reclaimed.size() == 1);
+    REQUIRE(reclaimed[0].startedAt.has_value());
+    REQUIRE(reclaimed[0].startedAt.value() >= before);
+    REQUIRE(reclaimed[0].startedAt.value() <= after);
+}

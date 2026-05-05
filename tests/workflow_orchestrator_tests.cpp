@@ -505,3 +505,95 @@ TEST_CASE("sweepExpiredLeases skips step whose workflow execution is not running
     REQUIRE(result.retriedCount == 0);
     REQUIRE(result.failedCount == 0);
 }
+
+TEST_CASE("startWorkflow creates initial step with createdAt set")
+{
+    TestContext context;
+    const auto before = std::chrono::system_clock::now();
+    const auto execution = startWorkflow(context);
+    const auto after = std::chrono::system_clock::now();
+
+    const auto step =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->createdAt.has_value());
+    REQUIRE(step->createdAt.value() >= before);
+    REQUIRE(step->createdAt.value() <= after);
+}
+
+TEST_CASE("pollAndClaim sets startedAt on claimed step")
+{
+    TestContext context;
+    const auto execution = startWorkflow(context);
+
+    const auto before = std::chrono::system_clock::now();
+    claimStartStep(context);
+    const auto after = std::chrono::system_clock::now();
+
+    const auto step =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->startedAt.has_value());
+    REQUIRE(step->startedAt.value() >= before);
+    REQUIRE(step->startedAt.value() <= after);
+}
+
+TEST_CASE("completeStep sets completedAt on step execution")
+{
+    TestContext context(makeWorkflowDefinition(), {completeWorkflowDecision()});
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto before = std::chrono::system_clock::now();
+    context.orchestrator.completeStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001",
+        workflow::json::Value::object()
+    );
+    const auto after = std::chrono::system_clock::now();
+
+    const auto step =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->completedAt.has_value());
+    REQUIRE(step->completedAt.value() >= before);
+    REQUIRE(step->completedAt.value() <= after);
+}
+
+TEST_CASE("failStep sets completedAt on step execution")
+{
+    TestContext context;
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto before = std::chrono::system_clock::now();
+    context.orchestrator.failStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", "timeout"
+    );
+    const auto after = std::chrono::system_clock::now();
+
+    const auto step =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->completedAt.has_value());
+    REQUIRE(step->completedAt.value() >= before);
+    REQUIRE(step->completedAt.value() <= after);
+}
+
+TEST_CASE("sweepExpiredLeases sets completedAt on the failed step")
+{
+    TestContext context(makeWorkflowDefinition(0));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    const auto before = std::chrono::system_clock::now();
+    context.orchestrator.sweepExpiredLeases();
+    const auto after = std::chrono::system_clock::now();
+
+    const auto step =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->completedAt.has_value());
+    REQUIRE(step->completedAt.value() >= before);
+    REQUIRE(step->completedAt.value() <= after);
+}

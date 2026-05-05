@@ -3,9 +3,38 @@
 namespace workflow
 {
 
-WorkflowService::WorkflowService(WorkflowOrchestrator& orchestrator)
-    : orchestrator_(orchestrator)
+WorkflowService::WorkflowService(
+    WorkflowOrchestrator& orchestrator,
+    std::chrono::seconds sweepInterval
+)
+    : orchestrator_(orchestrator),
+      sweepInterval_(sweepInterval),
+      sweepThread_([this] { runSweepLoop(); })
 {
+}
+
+WorkflowService::~WorkflowService()
+{
+    stopping_ = true;
+    sweepCv_.notify_one();
+    sweepThread_.join();
+}
+
+void WorkflowService::runSweepLoop()
+{
+    std::unique_lock<std::mutex> lock(sweepMutex_);
+
+    while (!stopping_)
+    {
+        sweepCv_.wait_for(lock, sweepInterval_, [this] { return stopping_.load(); });
+
+        if (!stopping_)
+        {
+            lock.unlock();
+            orchestrator_.sweepExpiredLeases();
+            lock.lock();
+        }
+    }
 }
 
 ValidateWorkflowDefinitionResponse
@@ -97,13 +126,6 @@ WorkflowService::listWorkflowDefinitions(const ListWorkflowDefinitionsRequest&) 
 {
     return ListWorkflowDefinitionsResponse{
         .definitions = orchestrator_.listWorkflowDefinitions(),
-    };
-}
-
-SweepExpiredLeasesResponse WorkflowService::sweepExpiredLeases(const SweepExpiredLeasesRequest&)
-{
-    return SweepExpiredLeasesResponse{
-        .result = orchestrator_.sweepExpiredLeases(),
     };
 }
 

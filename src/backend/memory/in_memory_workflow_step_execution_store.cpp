@@ -92,6 +92,7 @@ std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::pollAndCl
         stepExecution.workerId = workerId;
         stepExecution.leaseExpiresAt = now + durationIter->second;
         stepExecution.failureReason.reset();
+        stepExecution.startedAt = now;
 
         result.push_back(stepExecution);
     }
@@ -188,6 +189,8 @@ void InMemoryWorkflowStepExecutionStore::cancelByExecution(const std::string& wo
         throw std::invalid_argument("workflowExecutionId must not be empty");
     }
 
+    const auto now = std::chrono::system_clock::now();
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     for (auto& [key, stepExecution] : stepExecutions_)
@@ -205,6 +208,7 @@ void InMemoryWorkflowStepExecutionStore::cancelByExecution(const std::string& wo
             stepExecution.status = StepExecutionStatus::Canceled;
             stepExecution.workerId.reset();
             stepExecution.leaseExpiresAt.reset();
+            stepExecution.completedAt = now;
         }
     }
 }

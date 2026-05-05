@@ -25,6 +25,10 @@ struct WorkflowStepExecution
     std::optional<std::chrono::system_clock::time_point> leaseExpiresAt;
     std::optional<std::string> failureReason;
 
+    std::optional<std::chrono::system_clock::time_point> createdAt;
+    std::optional<std::chrono::system_clock::time_point> startedAt;
+    std::optional<std::chrono::system_clock::time_point> completedAt;
+
     json::Value input = json::Value::object();
     json::Value state = json::Value::object();
     json::Value output = json::Value::object();
