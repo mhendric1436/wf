@@ -9,6 +9,7 @@ void InMemoryWorkflowDefinitionStore::save(const WorkflowDefinition& definition)
 {
     validateKey(definition.workflowName, definition.workflowVersion);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     definitions_[makeKey(definition.workflowName, definition.workflowVersion)] = definition;
 }
 
@@ -19,6 +20,7 @@ std::optional<WorkflowDefinition> InMemoryWorkflowDefinitionStore::find(
 {
     validateKey(workflowName, workflowVersion);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto iter = definitions_.find(makeKey(workflowName, workflowVersion));
 
     if (iter == definitions_.end())
@@ -31,6 +33,7 @@ std::optional<WorkflowDefinition> InMemoryWorkflowDefinitionStore::find(
 
 std::vector<WorkflowDefinitionKey> InMemoryWorkflowDefinitionStore::list() const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::vector<WorkflowDefinitionKey> keys;
     keys.reserve(definitions_.size());
 
@@ -56,16 +59,19 @@ void InMemoryWorkflowDefinitionStore::remove(
 {
     validateKey(workflowName, workflowVersion);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     definitions_.erase(makeKey(workflowName, workflowVersion));
 }
 
 void InMemoryWorkflowDefinitionStore::clear()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     definitions_.clear();
 }
 
 std::size_t InMemoryWorkflowDefinitionStore::size() const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     return definitions_.size();
 }
 

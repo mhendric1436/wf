@@ -3,6 +3,7 @@
 #include "wf/store/workflow_definition_store.hpp"
 
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -44,6 +45,7 @@ class InMemoryWorkflowDefinitionStore final : public workflow::WorkflowDefinitio
         int workflowVersion
     );
 
+    mutable std::mutex mutex_;
     std::map<Key, WorkflowDefinition> definitions_;
 };
 

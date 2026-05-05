@@ -9,6 +9,7 @@
 #include "wf/workflow_step_execution.hpp"
 
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -84,6 +85,7 @@ class WorkflowOrchestrator
     const WorkflowStepExecutionStore& workflowStepExecutionStore() const;
 
   private:
+    mutable std::mutex mutex_;
     WorkflowDefinitionStore& definitionStore_;
     WorkflowExecutionStore& executionStore_;
     WorkflowStepExecutionStore& stepExecutionStore_;

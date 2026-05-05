@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -31,6 +32,7 @@ class InMemoryWorkflowExecutionStore final : public workflow::WorkflowExecutionS
     static void validateExecutionId(const std::string& workflowExecutionId);
 
     std::atomic<int> nextId_{0};
+    mutable std::mutex mutex_;
     std::map<std::string, WorkflowExecution> executions_;
 };
 

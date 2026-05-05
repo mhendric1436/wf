@@ -14,6 +14,7 @@ void InMemoryWorkflowExecutionStore::save(const WorkflowExecution& execution)
 {
     validateExecutionId(execution.workflowExecutionId);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     executions_[execution.workflowExecutionId] = execution;
 }
 
@@ -22,6 +23,7 @@ InMemoryWorkflowExecutionStore::find(const std::string& workflowExecutionId) con
 {
     validateExecutionId(workflowExecutionId);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto iter = executions_.find(workflowExecutionId);
 
     if (iter == executions_.end())
@@ -36,6 +38,7 @@ void InMemoryWorkflowExecutionStore::update(const WorkflowExecution& execution)
 {
     validateExecutionId(execution.workflowExecutionId);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto iter = executions_.find(execution.workflowExecutionId);
 
     if (iter == executions_.end())
@@ -52,16 +55,19 @@ void InMemoryWorkflowExecutionStore::remove(const std::string& workflowExecution
 {
     validateExecutionId(workflowExecutionId);
 
+    std::lock_guard<std::mutex> lock(mutex_);
     executions_.erase(workflowExecutionId);
 }
 
 void InMemoryWorkflowExecutionStore::clear()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     executions_.clear();
 }
 
 std::size_t InMemoryWorkflowExecutionStore::size() const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     return executions_.size();
 }
 

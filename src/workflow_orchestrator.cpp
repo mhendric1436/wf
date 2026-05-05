@@ -207,6 +207,7 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
     const json::Value& input
 )
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
 
     const auto definition = definitionStore_.find(workflowName, workflowVersion);
@@ -240,6 +241,7 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
     std::size_t maxResults
 )
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
     validateWorkerId(workerId);
 
@@ -268,6 +270,7 @@ WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
     const std::string& workerId
 )
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
@@ -309,6 +312,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     const json::Value& stepOutput
 )
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
@@ -405,6 +409,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     const std::string& reason
 )
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
@@ -475,6 +480,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
 
 WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workflowExecutionId)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateExecutionId(workflowExecutionId);
 
     const auto execution = executionStore_.find(workflowExecutionId);
@@ -500,6 +506,7 @@ WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workfl
 
 SweepResult WorkflowOrchestrator::sweepExpiredLeases()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     SweepResult sweepResult;
 
     const auto expiredSteps = stepExecutionStore_.findExpiredRunning();
@@ -568,12 +575,14 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
 std::optional<WorkflowExecution>
 WorkflowOrchestrator::getWorkflowExecution(const std::string& workflowExecutionId) const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     validateExecutionId(workflowExecutionId);
     return executionStore_.find(workflowExecutionId);
 }
 
 std::vector<WorkflowDefinitionKey> WorkflowOrchestrator::listWorkflowDefinitions() const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     return definitionStore_.list();
 }
 
