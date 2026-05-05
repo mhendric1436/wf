@@ -2,6 +2,7 @@
 
 #include "wf/json.hpp"
 
+#include <chrono>
 #include <optional>
 #include <string>
 
@@ -41,6 +42,9 @@ struct WorkflowExecution
     int currentStepAttempt = 0;
 
     std::optional<std::string> failureReason;
+
+    std::optional<std::chrono::system_clock::time_point> startedAt;
+    std::optional<std::chrono::system_clock::time_point> completedAt;
 };
 
 } // namespace workflow

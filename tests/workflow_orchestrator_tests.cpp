@@ -599,6 +599,118 @@ TEST_CASE("sweepExpiredLeases sets completedAt on the failed step")
     REQUIRE(step->completedAt.value() <= after);
 }
 
+TEST_CASE("startWorkflow sets startedAt on workflow execution")
+{
+    TestContext context;
+
+    const auto before = std::chrono::system_clock::now();
+    const auto execution = startWorkflow(context);
+    const auto after = std::chrono::system_clock::now();
+
+    REQUIRE(execution.startedAt.has_value());
+    REQUIRE(execution.startedAt.value() >= before);
+    REQUIRE(execution.startedAt.value() <= after);
+
+    const auto stored = context.executionStore.find(execution.workflowExecutionId);
+    REQUIRE(stored->startedAt.has_value());
+    REQUIRE(stored->startedAt.value() == execution.startedAt.value());
+}
+
+TEST_CASE("completeStep sets completedAt on workflow execution when workflow completes")
+{
+    TestContext context(makeWorkflowDefinition(), {completeWorkflowDecision()});
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto before = std::chrono::system_clock::now();
+    const auto result = context.orchestrator.completeStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001",
+        workflow::json::Value::object()
+    );
+    const auto after = std::chrono::system_clock::now();
+
+    REQUIRE(result.completedAt.has_value());
+    REQUIRE(result.completedAt.value() >= before);
+    REQUIRE(result.completedAt.value() <= after);
+}
+
+TEST_CASE("completeStep does not set completedAt when workflow continues to next step")
+{
+    TestContext context(makeWorkflowDefinition(), {nextStepDecision("chargePayment")});
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto result = context.orchestrator.completeStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001",
+        workflow::json::Value::object()
+    );
+
+    REQUIRE_FALSE(result.completedAt.has_value());
+}
+
+TEST_CASE("failStep sets completedAt on workflow execution when retries are exhausted")
+{
+    TestContext context(makeWorkflowDefinition(0));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto before = std::chrono::system_clock::now();
+    const auto result = context.orchestrator.failStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", "timeout"
+    );
+    const auto after = std::chrono::system_clock::now();
+
+    REQUIRE(result.status == WorkflowExecutionStatus::Failed);
+    REQUIRE(result.completedAt.has_value());
+    REQUIRE(result.completedAt.value() >= before);
+    REQUIRE(result.completedAt.value() <= after);
+}
+
+TEST_CASE("failStep does not set completedAt when retries remain")
+{
+    TestContext context(makeWorkflowDefinition(2));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto result = context.orchestrator.failStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", "timeout"
+    );
+
+    REQUIRE(result.status == WorkflowExecutionStatus::Running);
+    REQUIRE_FALSE(result.completedAt.has_value());
+}
+
+TEST_CASE("cancelWorkflow sets completedAt on workflow execution")
+{
+    TestContext context;
+    const auto execution = startWorkflow(context);
+
+    const auto before = std::chrono::system_clock::now();
+    const auto result = context.orchestrator.cancelWorkflow(execution.workflowExecutionId);
+    const auto after = std::chrono::system_clock::now();
+
+    REQUIRE(result.completedAt.has_value());
+    REQUIRE(result.completedAt.value() >= before);
+    REQUIRE(result.completedAt.value() <= after);
+}
+
+TEST_CASE("sweepExpiredLeases sets completedAt on workflow execution when failed")
+{
+    TestContext context(makeWorkflowDefinition(0));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    const auto before = std::chrono::system_clock::now();
+    context.orchestrator.sweepExpiredLeases();
+    const auto after = std::chrono::system_clock::now();
+
+    const auto stored = context.executionStore.find(execution.workflowExecutionId);
+    REQUIRE(stored->completedAt.has_value());
+    REQUIRE(stored->completedAt.value() >= before);
+    REQUIRE(stored->completedAt.value() <= after);
+}
+
 TEST_CASE("independent workflow executions can be completed concurrently without deadlock")
 {
     TestContext context(

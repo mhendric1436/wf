@@ -231,6 +231,7 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
     execution.input = input;
     execution.state = json::Value::object();
     execution.currentStepAttempt = 0;
+    execution.startedAt = std::chrono::system_clock::now();
 
     executionStore_.save(execution);
 
@@ -378,6 +379,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     if (decision.workflowComplete)
     {
         updatedExecution.status = WorkflowExecutionStatus::Completed;
+        updatedExecution.completedAt = std::chrono::system_clock::now();
         executionStore_.update(updatedExecution);
         return updatedExecution;
     }
@@ -477,6 +479,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
 
     updatedExecution.status = WorkflowExecutionStatus::Failed;
     updatedExecution.failureReason = reason;
+    updatedExecution.completedAt = std::chrono::system_clock::now();
     executionStore_.update(updatedExecution);
 
     return updatedExecution;
@@ -503,6 +506,7 @@ WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workfl
 
     WorkflowExecution canceled = *execution;
     canceled.status = WorkflowExecutionStatus::Canceled;
+    canceled.completedAt = std::chrono::system_clock::now();
     executionStore_.update(canceled);
 
     return canceled;
@@ -568,6 +572,7 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
         {
             updatedExecution.status = WorkflowExecutionStatus::Failed;
             updatedExecution.failureReason = "lease expired";
+            updatedExecution.completedAt = std::chrono::system_clock::now();
             executionStore_.update(updatedExecution);
             ++sweepResult.failedCount;
         }
