@@ -14,7 +14,9 @@
 
 using workflow::CompleteWorkflowStepRequest;
 using workflow::FailWorkflowStepRequest;
+using workflow::GetWorkflowExecutionRequest;
 using workflow::KeepAliveWorkflowStepRequest;
+using workflow::ListWorkflowDefinitionsRequest;
 using workflow::NextStepDecision;
 using workflow::PollAndClaimWorkflowStepsRequest;
 using workflow::RegisterWorkflowDefinitionRequest;
@@ -606,4 +608,126 @@ TEST_CASE("service fail throws for a non-owning worker")
         ),
         std::runtime_error
     );
+}
+
+TEST_CASE("service get-workflow-execution returns nullopt for unknown id")
+{
+    TestContext context;
+
+    const auto response = context.service.getWorkflowExecution(
+        GetWorkflowExecutionRequest{.workflowExecutionId = "nonexistent-id"}
+    );
+
+    REQUIRE_FALSE(response.execution.has_value());
+}
+
+TEST_CASE("service get-workflow-execution returns execution after start")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    const auto executionId = context.startExecution();
+
+    const auto response = context.service.getWorkflowExecution(
+        GetWorkflowExecutionRequest{.workflowExecutionId = executionId}
+    );
+
+    REQUIRE(response.execution.has_value());
+    REQUIRE(response.execution->workflowExecutionId == executionId);
+    REQUIRE(response.execution->workflowName == "orderProcessing");
+    REQUIRE(response.execution->status == WorkflowExecutionStatus::Running);
+    REQUIRE(response.execution->currentStepName == "validateOrder");
+}
+
+TEST_CASE("service get-workflow-execution reflects status after workflow completes")
+{
+    TestContext context({completeWorkflowDecision()});
+    context.registerValidDefinition();
+    const auto executionId = context.claimInitialStep("worker-001");
+
+    context.service.completeWorkflowStep(
+        CompleteWorkflowStepRequest{
+            .workflowExecutionId = executionId,
+            .stepName = "validateOrder",
+            .workerId = "worker-001",
+            .stepOutput = workflow::json::Value::object(),
+        }
+    );
+
+    const auto response = context.service.getWorkflowExecution(
+        GetWorkflowExecutionRequest{.workflowExecutionId = executionId}
+    );
+
+    REQUIRE(response.execution.has_value());
+    REQUIRE(response.execution->status == WorkflowExecutionStatus::Completed);
+}
+
+TEST_CASE("service get-workflow-execution throws for empty id")
+{
+    TestContext context;
+
+    REQUIRE_THROWS_AS(
+        context.service.getWorkflowExecution(
+            GetWorkflowExecutionRequest{.workflowExecutionId = ""}
+        ),
+        std::invalid_argument
+    );
+}
+
+TEST_CASE("service list-workflow-definitions returns empty before any registration")
+{
+    TestContext context;
+
+    const auto response = context.service.listWorkflowDefinitions(ListWorkflowDefinitionsRequest{});
+
+    REQUIRE(response.definitions.empty());
+}
+
+TEST_CASE("service list-workflow-definitions returns all registered definitions in key order")
+{
+    TestContext context;
+
+    context.service.registerWorkflowDefinition(
+        RegisterWorkflowDefinitionRequest{
+            .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON),
+        }
+    );
+
+    const auto secondJson = workflow::json::parse(R"json(
+    {
+      "workflowName": "invoiceProcessing",
+      "workflowVersion": 1,
+      "startWorkflowStepName": "generateInvoice",
+      "expectedExecutionTime": "PT5M",
+      "steps": [
+        {
+          "name": "generateInvoice",
+          "expectedExecutionTime": "PT1M",
+          "maxRetries": 0
+        }
+      ]
+    }
+    )json");
+
+    context.service.registerWorkflowDefinition(
+        RegisterWorkflowDefinitionRequest{.definitionJson = secondJson}
+    );
+
+    const auto response = context.service.listWorkflowDefinitions(ListWorkflowDefinitionsRequest{});
+
+    REQUIRE(response.definitions.size() == 2);
+    REQUIRE(response.definitions[0].workflowName == "invoiceProcessing");
+    REQUIRE(response.definitions[0].workflowVersion == 1);
+    REQUIRE(response.definitions[1].workflowName == "orderProcessing");
+    REQUIRE(response.definitions[1].workflowVersion == 1);
+}
+
+TEST_CASE("service list-workflow-definitions reflects re-registration without duplication")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    context.registerValidDefinition();
+
+    const auto response = context.service.listWorkflowDefinitions(ListWorkflowDefinitionsRequest{});
+
+    REQUIRE(response.definitions.size() == 1);
 }

@@ -7,6 +7,7 @@
 #include "wf/workflow_step_execution.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -96,6 +97,25 @@ struct FailWorkflowStepResponse
     WorkflowExecution execution;
 };
 
+struct GetWorkflowExecutionRequest
+{
+    std::string workflowExecutionId;
+};
+
+struct GetWorkflowExecutionResponse
+{
+    std::optional<WorkflowExecution> execution;
+};
+
+struct ListWorkflowDefinitionsRequest
+{
+};
+
+struct ListWorkflowDefinitionsResponse
+{
+    std::vector<WorkflowDefinitionKey> definitions;
+};
+
 class WorkflowService
 {
   public:
@@ -119,6 +139,12 @@ class WorkflowService
     CompleteWorkflowStepResponse completeWorkflowStep(const CompleteWorkflowStepRequest& request);
 
     FailWorkflowStepResponse failWorkflowStep(const FailWorkflowStepRequest& request);
+
+    GetWorkflowExecutionResponse
+    getWorkflowExecution(const GetWorkflowExecutionRequest& request) const;
+
+    ListWorkflowDefinitionsResponse
+    listWorkflowDefinitions(const ListWorkflowDefinitionsRequest& request) const;
 
   private:
     WorkflowOrchestrator& orchestrator_;

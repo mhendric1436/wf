@@ -77,4 +77,20 @@ FailWorkflowStepResponse WorkflowService::failWorkflowStep(const FailWorkflowSte
     };
 }
 
+GetWorkflowExecutionResponse
+WorkflowService::getWorkflowExecution(const GetWorkflowExecutionRequest& request) const
+{
+    return GetWorkflowExecutionResponse{
+        .execution = orchestrator_.getWorkflowExecution(request.workflowExecutionId),
+    };
+}
+
+ListWorkflowDefinitionsResponse
+WorkflowService::listWorkflowDefinitions(const ListWorkflowDefinitionsRequest&) const
+{
+    return ListWorkflowDefinitionsResponse{
+        .definitions = orchestrator_.listWorkflowDefinitions(),
+    };
+}
+
 } // namespace workflow

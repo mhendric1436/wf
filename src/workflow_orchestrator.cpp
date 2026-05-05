@@ -482,6 +482,18 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     return updatedExecution;
 }
 
+std::optional<WorkflowExecution>
+WorkflowOrchestrator::getWorkflowExecution(const std::string& workflowExecutionId) const
+{
+    validateExecutionId(workflowExecutionId);
+    return executionStore_.find(workflowExecutionId);
+}
+
+std::vector<WorkflowDefinitionKey> WorkflowOrchestrator::listWorkflowDefinitions() const
+{
+    return definitionStore_.list();
+}
+
 WorkflowDefinitionStore& WorkflowOrchestrator::workflowDefinitionStore()
 {
     return definitionStore_;

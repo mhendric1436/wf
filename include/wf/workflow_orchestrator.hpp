@@ -9,6 +9,7 @@
 #include "wf/workflow_step_execution.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,11 @@ class WorkflowOrchestrator
         const std::string& workerId,
         const std::string& reason
     );
+
+    std::optional<WorkflowExecution>
+    getWorkflowExecution(const std::string& workflowExecutionId) const;
+
+    std::vector<WorkflowDefinitionKey> listWorkflowDefinitions() const;
 
     WorkflowDefinitionStore& workflowDefinitionStore();
     const WorkflowDefinitionStore& workflowDefinitionStore() const;
