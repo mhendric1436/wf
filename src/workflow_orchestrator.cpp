@@ -12,18 +12,6 @@ namespace workflow
 namespace
 {
 
-std::string makeWorkflowExecutionId(
-    const std::string& workflowName,
-    int workflowVersion
-)
-{
-    static int counter = 0;
-    ++counter;
-
-    return workflowName + "-v" + std::to_string(workflowVersion) + "-exec-" +
-           std::to_string(counter);
-}
-
 const WorkflowStep& findStepDefinition(
     const WorkflowDefinition& definition,
     const std::string& stepName
@@ -228,7 +216,7 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
     }
 
     WorkflowExecution execution;
-    execution.workflowExecutionId = makeWorkflowExecutionId(workflowName, workflowVersion);
+    execution.workflowExecutionId = executionStore_.generateExecutionId();
     execution.workflowName = workflowName;
     execution.workflowVersion = workflowVersion;
     execution.status = WorkflowExecutionStatus::Running;

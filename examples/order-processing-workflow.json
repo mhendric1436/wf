@@ -1,0 +1,33 @@
+{
+  "workflowName": "order-processing",
+  "workflowVersion": 1,
+  "expectedExecutionTime": "PT5M",
+  "startWorkflowStepName": "validate-order",
+  "steps": [
+    {
+      "name": "validate-order",
+      "expectedExecutionTime": "PT10S",
+      "maxRetries": 2
+    },
+    {
+      "name": "charge-payment",
+      "expectedExecutionTime": "PT30S",
+      "maxRetries": 3
+    },
+    {
+      "name": "reserve-inventory",
+      "expectedExecutionTime": "PT15S",
+      "maxRetries": 2
+    },
+    {
+      "name": "fulfill-order",
+      "expectedExecutionTime": "PT2M",
+      "maxRetries": 1
+    },
+    {
+      "name": "send-confirmation",
+      "expectedExecutionTime": "PT10S",
+      "maxRetries": 3
+    }
+  ]
+}

@@ -5,6 +5,11 @@
 namespace workflow::backend::memory
 {
 
+std::string InMemoryWorkflowExecutionStore::generateExecutionId()
+{
+    return "wfexec-" + std::to_string(++nextId_);
+}
+
 void InMemoryWorkflowExecutionStore::save(const WorkflowExecution& execution)
 {
     validateExecutionId(execution.workflowExecutionId);

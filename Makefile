@@ -17,27 +17,33 @@ LIB_NAME := libwf.a
 LIB := $(BUILD_DIR)/$(LIB_NAME)
 
 TEST_BIN := $(BIN_DIR)/wf_tests
+WF_BIN := $(BIN_DIR)/wf
 
 SRC := $(shell find src -name '*.cpp' | sort)
 TEST_SRC := $(shell find tests -name '*.cpp' | sort)
+CMD_SRC := $(shell find cmd -name '*.cpp' | sort)
 HEADER_FILES := $(shell find include -name '*.hpp' | sort)
 
 CATCH_SRC := third_party/catch2/catch_amalgamated.cpp
 
 OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRC))
 TEST_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(TEST_SRC))
+CMD_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(CMD_SRC))
 CATCH_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(CATCH_SRC))
 
 FORMAT_FILES := \
 	$(HEADER_FILES) \
 	$(SRC) \
-	$(TEST_SRC)
+	$(TEST_SRC) \
+	$(CMD_SRC)
 
-.PHONY: all build test format format-check docs-png clean help print-files
+.PHONY: all build test cli format format-check docs-png clean help print-files
 
-all: test
+all: test cli
 
 build: $(LIB)
+
+cli: $(WF_BIN)
 
 $(LIB): format $(OBJ)
 	@mkdir -p $(dir $@)
@@ -46,6 +52,10 @@ $(LIB): format $(OBJ)
 $(TEST_BIN): $(LIB) $(TEST_OBJ) $(CATCH_OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(TEST_OBJ) $(CATCH_OBJ) $(LIB)
+
+$(WF_BIN): $(LIB) $(CMD_OBJ)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(CMD_OBJ) $(LIB)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
@@ -76,14 +86,18 @@ print-files:
 	@echo "TEST_SRC:"
 	@printf '  %s\n' $(TEST_SRC)
 	@echo ""
+	@echo "CMD_SRC:"
+	@printf '  %s\n' $(CMD_SRC)
+	@echo ""
 	@echo "HEADER_FILES:"
 	@printf '  %s\n' $(HEADER_FILES)
 
 help:
 	@echo "Targets:"
-	@echo "  make              Build and run tests"
+	@echo "  make              Build and run tests, then build CLI"
 	@echo "  make build        Build static library only"
 	@echo "  make test         Build and run tests"
+	@echo "  make cli          Build the wf CLI binary"
 	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
 	@echo "  make docs-png     Generate PNG diagrams from docs/*.puml"

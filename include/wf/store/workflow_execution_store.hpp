@@ -13,6 +13,8 @@ class WorkflowExecutionStore
   public:
     virtual ~WorkflowExecutionStore() = default;
 
+    virtual std::string generateExecutionId() = 0;
+
     virtual void save(const WorkflowExecution& execution) = 0;
 
     virtual std::optional<WorkflowExecution> find(const std::string& workflowExecutionId) const = 0;

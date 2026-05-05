@@ -2,6 +2,7 @@
 
 #include "wf/store/workflow_execution_store.hpp"
 
+#include <atomic>
 #include <map>
 #include <optional>
 #include <string>
@@ -12,6 +13,8 @@ namespace workflow::backend::memory
 class InMemoryWorkflowExecutionStore final : public workflow::WorkflowExecutionStore
 {
   public:
+    std::string generateExecutionId() override;
+
     void save(const WorkflowExecution& execution) override;
 
     std::optional<WorkflowExecution> find(const std::string& workflowExecutionId) const override;
@@ -27,6 +30,7 @@ class InMemoryWorkflowExecutionStore final : public workflow::WorkflowExecutionS
   private:
     static void validateExecutionId(const std::string& workflowExecutionId);
 
+    std::atomic<int> nextId_{0};
     std::map<std::string, WorkflowExecution> executions_;
 };
 
