@@ -9,6 +9,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using workflow::NextStepDecision;
@@ -596,4 +597,49 @@ TEST_CASE("sweepExpiredLeases sets completedAt on the failed step")
     REQUIRE(step->completedAt.has_value());
     REQUIRE(step->completedAt.value() >= before);
     REQUIRE(step->completedAt.value() <= after);
+}
+
+TEST_CASE("independent workflow executions can be completed concurrently without deadlock")
+{
+    TestContext context(
+        makeWorkflowDefinition(), {completeWorkflowDecision(), completeWorkflowDecision()}
+    );
+
+    const auto execA = startWorkflow(context);
+    const auto execB = startWorkflow(context);
+
+    const auto stepsA = pollAndClaim(context, "worker-A");
+    const auto stepsB = pollAndClaim(context, "worker-B");
+
+    REQUIRE(stepsA.size() == 1);
+    REQUIRE(stepsB.size() == 1);
+
+    WorkflowExecution resultA;
+    WorkflowExecution resultB;
+
+    std::thread threadA(
+        [&]()
+        {
+            resultA = context.orchestrator.completeStep(
+                execA.workflowExecutionId, "validateOrder", "worker-A",
+                workflow::json::Value::object()
+            );
+        }
+    );
+
+    std::thread threadB(
+        [&]()
+        {
+            resultB = context.orchestrator.completeStep(
+                execB.workflowExecutionId, "validateOrder", "worker-B",
+                workflow::json::Value::object()
+            );
+        }
+    );
+
+    threadA.join();
+    threadB.join();
+
+    REQUIRE(resultA.status == WorkflowExecutionStatus::Completed);
+    REQUIRE(resultB.status == WorkflowExecutionStatus::Completed);
 }

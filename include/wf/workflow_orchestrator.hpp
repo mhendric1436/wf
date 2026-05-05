@@ -8,7 +8,9 @@
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_step_execution.hpp"
 
+#include <array>
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -85,7 +87,11 @@ class WorkflowOrchestrator
     const WorkflowStepExecutionStore& workflowStepExecutionStore() const;
 
   private:
-    mutable std::mutex mutex_;
+    static constexpr std::size_t STRIPE_COUNT = 64;
+
+    std::mutex& stripeFor(const std::string& executionId) const;
+
+    mutable std::array<std::mutex, STRIPE_COUNT> executionStripes_;
     WorkflowDefinitionStore& definitionStore_;
     WorkflowExecutionStore& executionStore_;
     WorkflowStepExecutionStore& stepExecutionStore_;
