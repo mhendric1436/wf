@@ -53,6 +53,28 @@ WorkflowExecution rowToExecution(sqlite3_stmt* stmt)
     return exec;
 }
 
+constexpr const char* SQL_SAVE_EXECUTION =
+    "INSERT OR REPLACE INTO workflow_executions "
+    "(workflow_execution_id, workflow_name, workflow_version, status, "
+    " current_step_name, input_json, state_json, current_step_attempt, "
+    " failure_reason, started_at_ms, completed_at_ms) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+constexpr const char* SQL_FIND_EXECUTION =
+    "SELECT workflow_execution_id, workflow_name, workflow_version, status, "
+    "       current_step_name, input_json, state_json, current_step_attempt, "
+    "       failure_reason, started_at_ms, completed_at_ms "
+    "FROM workflow_executions "
+    "WHERE workflow_execution_id = ?";
+
+constexpr const char* SQL_UPDATE_EXECUTION =
+    "UPDATE workflow_executions SET "
+    "  workflow_name = ?, workflow_version = ?, status = ?, "
+    "  current_step_name = ?, input_json = ?, state_json = ?, "
+    "  current_step_attempt = ?, failure_reason = ?, "
+    "  started_at_ms = ?, completed_at_ms = ? "
+    "WHERE workflow_execution_id = ?";
+
 } // namespace
 
 SQLiteWorkflowExecutionStore::SQLiteWorkflowExecutionStore(SQLiteDatabase& db)
@@ -86,13 +108,7 @@ void SQLiteWorkflowExecutionStore::save(const WorkflowExecution& execution)
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "INSERT OR REPLACE INTO workflow_executions "
-                      "(workflow_execution_id, workflow_name, workflow_version, status, "
-                      " current_step_name, input_json, state_json, current_step_attempt, "
-                      " failure_reason, started_at_ms, completed_at_ms) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    );
+    Stmt stmt(db_.handle(), SQL_SAVE_EXECUTION);
 
     sqlite3_bind_text(stmt.get(), 1, execution.workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, execution.workflowName.c_str(), -1, SQLITE_TRANSIENT);
@@ -147,13 +163,7 @@ SQLiteWorkflowExecutionStore::find(const std::string& workflowExecutionId) const
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "SELECT workflow_execution_id, workflow_name, workflow_version, status, "
-                      "       current_step_name, input_json, state_json, current_step_attempt, "
-                      "       failure_reason, started_at_ms, completed_at_ms "
-                      "FROM workflow_executions "
-                      "WHERE workflow_execution_id = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_FIND_EXECUTION);
 
     sqlite3_bind_text(stmt.get(), 1, workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
 
@@ -174,14 +184,7 @@ void SQLiteWorkflowExecutionStore::update(const WorkflowExecution& execution)
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "UPDATE workflow_executions SET "
-                      "  workflow_name = ?, workflow_version = ?, status = ?, "
-                      "  current_step_name = ?, input_json = ?, state_json = ?, "
-                      "  current_step_attempt = ?, failure_reason = ?, "
-                      "  started_at_ms = ?, completed_at_ms = ? "
-                      "WHERE workflow_execution_id = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_UPDATE_EXECUTION);
 
     sqlite3_bind_text(stmt.get(), 1, execution.workflowName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 2, execution.workflowVersion);

@@ -155,6 +155,53 @@ constexpr const char* SELECT_STEP_COLS =
     "created_at_ms, started_at_ms, completed_at_ms, "
     "input_json, state_json, output_json";
 
+static const std::string SQL_SAVE_STEP = "INSERT OR REPLACE INTO workflow_step_executions (" +
+                                         std::string(SELECT_STEP_COLS) +
+                                         ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+static const std::string SQL_SELECT_STEP_BY_ID =
+    "SELECT " + std::string(SELECT_STEP_COLS) +
+    " FROM workflow_step_executions "
+    "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?";
+
+static const std::string SQL_POLL_FIND =
+    "SELECT " + std::string(SELECT_STEP_COLS) +
+    " FROM workflow_step_executions "
+    "WHERE workflow_name = ? AND workflow_version = ? "
+    "  AND (status = 0 OR (status = 1 AND lease_expires_at_ms <= ?))";
+
+static const std::string SQL_EXPIRED_RUNNING =
+    "SELECT " + std::string(SELECT_STEP_COLS) +
+    " FROM workflow_step_executions "
+    "WHERE status = 1 AND lease_expires_at_ms IS NOT NULL AND lease_expires_at_ms <= ?";
+
+constexpr const char* SQL_POLL_UPDATE =
+    "UPDATE workflow_step_executions "
+    "SET status = 1, worker_id = ?, lease_expires_at_ms = ?, "
+    "    failure_reason = NULL, started_at_ms = ? "
+    "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?";
+
+constexpr const char* SQL_KEEP_ALIVE_UPDATE =
+    "UPDATE workflow_step_executions SET lease_expires_at_ms = ? "
+    "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?";
+
+constexpr const char* SQL_UPDATE_STEP =
+    "UPDATE workflow_step_executions SET "
+    "  workflow_name = ?, workflow_version = ?, status = ?, "
+    "  worker_id = ?, lease_expires_at_ms = ?, failure_reason = ?, "
+    "  created_at_ms = ?, started_at_ms = ?, completed_at_ms = ?, "
+    "  input_json = ?, state_json = ?, output_json = ? "
+    "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?";
+
+constexpr const char* SQL_CANCEL_BY_EXECUTION =
+    "UPDATE workflow_step_executions "
+    "SET status = 4, worker_id = NULL, lease_expires_at_ms = NULL, completed_at_ms = ? "
+    "WHERE workflow_execution_id = ? AND status IN (0, 1)";
+
+constexpr const char* SQL_REMOVE_STEP =
+    "DELETE FROM workflow_step_executions "
+    "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?";
+
 void bindStepExecution(
     sqlite3_stmt* stmt,
     const WorkflowStepExecution& s,
@@ -246,13 +293,7 @@ void SQLiteWorkflowStepExecutionStore::save(const WorkflowStepExecution& stepExe
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "INSERT OR REPLACE INTO workflow_step_executions "
-                      "(" +
-                          std::string(SELECT_STEP_COLS) +
-                          ") "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    );
+    Stmt stmt(db_.handle(), SQL_SAVE_STEP);
 
     bindStepExecution(stmt.get(), stepExecution);
 
@@ -274,12 +315,7 @@ std::optional<WorkflowStepExecution> SQLiteWorkflowStepExecutionStore::find(
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "SELECT " + std::string(SELECT_STEP_COLS) +
-                          " "
-                          "FROM workflow_step_executions "
-                          "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_SELECT_STEP_BY_ID);
 
     sqlite3_bind_text(stmt.get(), 1, workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, stepName.c_str(), -1, SQLITE_TRANSIENT);
@@ -316,13 +352,7 @@ std::vector<WorkflowStepExecution> SQLiteWorkflowStepExecutionStore::pollAndClai
 
     try
     {
-        Stmt findStmt(
-            db_.handle(), "SELECT " + std::string(SELECT_STEP_COLS) +
-                              " "
-                              "FROM workflow_step_executions "
-                              "WHERE workflow_name = ? AND workflow_version = ? "
-                              "  AND (status = 0 OR (status = 1 AND lease_expires_at_ms <= ?))"
-        );
+        Stmt findStmt(db_.handle(), SQL_POLL_FIND);
 
         sqlite3_bind_text(findStmt.get(), 1, workflowName.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(findStmt.get(), 2, workflowVersion);
@@ -337,12 +367,7 @@ std::vector<WorkflowStepExecution> SQLiteWorkflowStepExecutionStore::pollAndClai
 
         std::vector<WorkflowStepExecution> result;
 
-        Stmt updateStmt(
-            db_.handle(), "UPDATE workflow_step_executions "
-                          "SET status = 1, worker_id = ?, lease_expires_at_ms = ?, "
-                          "    failure_reason = NULL, started_at_ms = ? "
-                          "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?"
-        );
+        Stmt updateStmt(db_.handle(), SQL_POLL_UPDATE);
 
         for (auto& step : candidates)
         {
@@ -414,12 +439,7 @@ WorkflowStepExecution SQLiteWorkflowStepExecutionStore::keepAlive(
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt findStmt(
-        db_.handle(), "SELECT " + std::string(SELECT_STEP_COLS) +
-                          " "
-                          "FROM workflow_step_executions "
-                          "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?"
-    );
+    Stmt findStmt(db_.handle(), SQL_SELECT_STEP_BY_ID);
 
     sqlite3_bind_text(findStmt.get(), 1, workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(findStmt.get(), 2, stepName.c_str(), -1, SQLITE_TRANSIENT);
@@ -464,10 +484,7 @@ WorkflowStepExecution SQLiteWorkflowStepExecutionStore::keepAlive(
         );
     }
 
-    Stmt updateStmt(
-        db_.handle(), "UPDATE workflow_step_executions SET lease_expires_at_ms = ? "
-                      "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?"
-    );
+    Stmt updateStmt(db_.handle(), SQL_KEEP_ALIVE_UPDATE);
 
     sqlite3_bind_int64(updateStmt.get(), 1, newLeaseExpiresAtMs);
     sqlite3_bind_text(updateStmt.get(), 2, workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
@@ -495,14 +512,7 @@ void SQLiteWorkflowStepExecutionStore::update(const WorkflowStepExecution& stepE
     const auto stateJson = json::stringify(stepExecution.state);
     const auto outputJson = json::stringify(stepExecution.output);
 
-    Stmt stmt(
-        db_.handle(), "UPDATE workflow_step_executions SET "
-                      "  workflow_name = ?, workflow_version = ?, status = ?, "
-                      "  worker_id = ?, lease_expires_at_ms = ?, failure_reason = ?, "
-                      "  created_at_ms = ?, started_at_ms = ?, completed_at_ms = ?, "
-                      "  input_json = ?, state_json = ?, output_json = ? "
-                      "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_UPDATE_STEP);
 
     sqlite3_bind_text(stmt.get(), 1, stepExecution.workflowName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 2, stepExecution.workflowVersion);
@@ -602,12 +612,7 @@ void SQLiteWorkflowStepExecutionStore::cancelByExecution(const std::string& work
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(),
-        "UPDATE workflow_step_executions "
-        "SET status = 4, worker_id = NULL, lease_expires_at_ms = NULL, completed_at_ms = ? "
-        "WHERE workflow_execution_id = ? AND status IN (0, 1)"
-    );
+    Stmt stmt(db_.handle(), SQL_CANCEL_BY_EXECUTION);
 
     sqlite3_bind_int64(stmt.get(), 1, nowMs);
     sqlite3_bind_text(stmt.get(), 2, workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
@@ -621,13 +626,7 @@ std::vector<WorkflowStepExecution> SQLiteWorkflowStepExecutionStore::findExpired
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(),
-        "SELECT " + std::string(SELECT_STEP_COLS) +
-            " "
-            "FROM workflow_step_executions "
-            "WHERE status = 1 AND lease_expires_at_ms IS NOT NULL AND lease_expires_at_ms <= ?"
-    );
+    Stmt stmt(db_.handle(), SQL_EXPIRED_RUNNING);
 
     sqlite3_bind_int64(stmt.get(), 1, nowMs);
 
@@ -651,10 +650,7 @@ void SQLiteWorkflowStepExecutionStore::remove(
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "DELETE FROM workflow_step_executions "
-                      "WHERE workflow_execution_id = ? AND step_name = ? AND attempt = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_REMOVE_STEP);
 
     sqlite3_bind_text(stmt.get(), 1, workflowExecutionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, stepName.c_str(), -1, SQLITE_TRANSIENT);

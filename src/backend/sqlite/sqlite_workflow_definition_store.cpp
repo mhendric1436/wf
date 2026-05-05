@@ -102,6 +102,25 @@ WorkflowDefinition rowToDefinition(sqlite3_stmt* stmt)
     return def;
 }
 
+constexpr const char* SQL_SAVE_DEFINITION =
+    "INSERT OR REPLACE INTO workflow_definitions "
+    "(workflow_name, workflow_version, start_workflow_step_name, "
+    " expected_execution_time, steps_json) "
+    "VALUES (?, ?, ?, ?, ?)";
+
+constexpr const char* SQL_FIND_DEFINITION =
+    "SELECT workflow_name, workflow_version, start_workflow_step_name, "
+    "       expected_execution_time, steps_json "
+    "FROM workflow_definitions "
+    "WHERE workflow_name = ? AND workflow_version = ?";
+
+constexpr const char* SQL_LIST_DEFINITIONS = "SELECT workflow_name, workflow_version "
+                                             "FROM workflow_definitions "
+                                             "ORDER BY workflow_name, workflow_version";
+
+constexpr const char* SQL_REMOVE_DEFINITION =
+    "DELETE FROM workflow_definitions WHERE workflow_name = ? AND workflow_version = ?";
+
 } // namespace
 
 SQLiteWorkflowDefinitionStore::SQLiteWorkflowDefinitionStore(SQLiteDatabase& db)
@@ -117,12 +136,7 @@ void SQLiteWorkflowDefinitionStore::save(const WorkflowDefinition& definition)
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "INSERT OR REPLACE INTO workflow_definitions "
-                      "(workflow_name, workflow_version, start_workflow_step_name, "
-                      " expected_execution_time, steps_json) "
-                      "VALUES (?, ?, ?, ?, ?)"
-    );
+    Stmt stmt(db_.handle(), SQL_SAVE_DEFINITION);
 
     sqlite3_bind_text(stmt.get(), 1, definition.workflowName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 2, definition.workflowVersion);
@@ -151,12 +165,7 @@ std::optional<WorkflowDefinition> SQLiteWorkflowDefinitionStore::find(
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "SELECT workflow_name, workflow_version, start_workflow_step_name, "
-                      "       expected_execution_time, steps_json "
-                      "FROM workflow_definitions "
-                      "WHERE workflow_name = ? AND workflow_version = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_FIND_DEFINITION);
 
     sqlite3_bind_text(stmt.get(), 1, workflowName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 2, workflowVersion);
@@ -173,11 +182,7 @@ std::vector<WorkflowDefinitionKey> SQLiteWorkflowDefinitionStore::list() const
 {
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(), "SELECT workflow_name, workflow_version "
-                      "FROM workflow_definitions "
-                      "ORDER BY workflow_name, workflow_version"
-    );
+    Stmt stmt(db_.handle(), SQL_LIST_DEFINITIONS);
 
     std::vector<WorkflowDefinitionKey> keys;
 
@@ -201,10 +206,7 @@ void SQLiteWorkflowDefinitionStore::remove(
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    Stmt stmt(
-        db_.handle(),
-        "DELETE FROM workflow_definitions WHERE workflow_name = ? AND workflow_version = ?"
-    );
+    Stmt stmt(db_.handle(), SQL_REMOVE_DEFINITION);
 
     sqlite3_bind_text(stmt.get(), 1, workflowName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 2, workflowVersion);
