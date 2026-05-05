@@ -1,0 +1,671 @@
+openapi: 3.1.0
+
+info:
+  title: Workflow Service API
+  version: 1.0.0
+  description: >
+    HTTP API for the wf workflow orchestration library.
+    All timestamps are ISO 8601 strings in UTC (e.g. 2026-05-05T14:32:00.123Z).
+    Errors use RFC 9457 Problem Details (application/problem+json).
+
+servers:
+  - url: /v1
+
+paths:
+
+  /workflow-definitions/validate:
+    post:
+      operationId: validateWorkflowDefinition
+      summary: Validate a workflow definition without registering it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowDefinition'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateWorkflowDefinitionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /workflow-definitions:
+    get:
+      operationId: listWorkflowDefinitions
+      summary: List all registered workflow definition keys
+      responses:
+        '200':
+          description: Registered workflow definition keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkflowDefinitionsResponse'
+    post:
+      operationId: registerWorkflowDefinition
+      summary: Register a workflow definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowDefinition'
+      responses:
+        '201':
+          description: Registered workflow definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterWorkflowDefinitionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /workflow-executions:
+    post:
+      operationId: startWorkflowExecution
+      summary: Start a new workflow execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartWorkflowExecutionRequest'
+      responses:
+        '201':
+          description: Started workflow execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartWorkflowExecutionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workflow-executions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Workflow execution ID
+
+    get:
+      operationId: getWorkflowExecution
+      summary: Get a workflow execution by ID
+      responses:
+        '200':
+          description: Workflow execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetWorkflowExecutionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: cancelWorkflow
+      summary: Cancel a running workflow execution
+      responses:
+        '200':
+          description: Canceled workflow execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelWorkflowResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /workflow-step-executions/poll-and-claim:
+    post:
+      operationId: pollAndClaimWorkflowSteps
+      summary: Poll for and atomically claim pending workflow step executions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PollAndClaimWorkflowStepsRequest'
+      responses:
+        '200':
+          description: Claimed workflow step executions (empty array if none available)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollAndClaimWorkflowStepsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workflow-step-executions/keep-alive:
+    post:
+      operationId: keepAliveWorkflowStep
+      summary: Extend the lease on a claimed workflow step execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeepAliveWorkflowStepRequest'
+      responses:
+        '200':
+          description: Workflow step execution with extended lease
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepAliveWorkflowStepResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /workflow-step-executions/complete:
+    post:
+      operationId: completeWorkflowStep
+      summary: Mark a workflow step execution as completed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteWorkflowStepRequest'
+      responses:
+        '200':
+          description: Updated workflow execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteWorkflowStepResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /workflow-step-executions/fail:
+    post:
+      operationId: failWorkflowStep
+      summary: Mark a workflow step execution as failed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailWorkflowStepRequest'
+      responses:
+        '200':
+          description: Updated workflow execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailWorkflowStepResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+
+  schemas:
+
+    # -------------------------------------------------------------------------
+    # Domain types
+    # -------------------------------------------------------------------------
+
+    WorkflowDefinition:
+      type: object
+      required:
+        - workflowName
+        - workflowVersion
+        - startWorkflowStepName
+        - expectedExecutionTime
+        - steps
+      properties:
+        workflowName:
+          type: string
+          minLength: 1
+        workflowVersion:
+          type: integer
+          minimum: 1
+        startWorkflowStepName:
+          type: string
+          minLength: 1
+        expectedExecutionTime:
+          type: string
+          description: ISO 8601 duration (e.g. PT10M)
+          examples:
+            - PT10M
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+
+    WorkflowStep:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+        expectedExecutionTime:
+          type: string
+          description: ISO 8601 duration (e.g. PT30S)
+        maxRetries:
+          type: integer
+          minimum: 0
+      additionalProperties: true
+      description: >
+        Additional properties beyond name, expectedExecutionTime, and maxRetries
+        are preserved and returned as-is.
+
+    WorkflowDefinitionKey:
+      type: object
+      required:
+        - workflowName
+        - workflowVersion
+      properties:
+        workflowName:
+          type: string
+        workflowVersion:
+          type: integer
+
+    WorkflowExecution:
+      type: object
+      required:
+        - workflowExecutionId
+        - workflowName
+        - workflowVersion
+        - status
+        - currentStepName
+        - input
+        - state
+        - currentStepAttempt
+      properties:
+        workflowExecutionId:
+          type: string
+        workflowName:
+          type: string
+        workflowVersion:
+          type: integer
+        status:
+          $ref: '#/components/schemas/WorkflowExecutionStatus'
+        currentStepName:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        state:
+          type: object
+          additionalProperties: true
+        currentStepAttempt:
+          type: integer
+          minimum: 0
+        failureReason:
+          type: ['string', 'null']
+        startedAt:
+          type: ['string', 'null']
+          format: date-time
+        completedAt:
+          type: ['string', 'null']
+          format: date-time
+
+    WorkflowExecutionStatus:
+      type: string
+      enum:
+        - Running
+        - Completed
+        - Failed
+        - Canceled
+
+    WorkflowStepExecution:
+      type: object
+      required:
+        - workflowExecutionId
+        - workflowName
+        - workflowVersion
+        - stepName
+        - attempt
+        - status
+        - input
+        - state
+        - output
+      properties:
+        workflowExecutionId:
+          type: string
+        workflowName:
+          type: string
+        workflowVersion:
+          type: integer
+        stepName:
+          type: string
+        attempt:
+          type: integer
+          minimum: 0
+        status:
+          $ref: '#/components/schemas/StepExecutionStatus'
+        workerId:
+          type: ['string', 'null']
+        leaseExpiresAt:
+          type: ['string', 'null']
+          format: date-time
+        failureReason:
+          type: ['string', 'null']
+        createdAt:
+          type: ['string', 'null']
+          format: date-time
+        startedAt:
+          type: ['string', 'null']
+          format: date-time
+        completedAt:
+          type: ['string', 'null']
+          format: date-time
+        input:
+          type: object
+          additionalProperties: true
+        state:
+          type: object
+          additionalProperties: true
+        output:
+          type: object
+          additionalProperties: true
+
+    StepExecutionStatus:
+      type: string
+      enum:
+        - Pending
+        - Running
+        - Completed
+        - Failed
+        - Canceled
+
+    ValidationResult:
+      type: object
+      required:
+        - valid
+        - errors
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+      properties:
+        type:
+          type: string
+          enum:
+            - invalid-argument
+            - not-found
+            - conflict
+            - internal-error
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+
+    # -------------------------------------------------------------------------
+    # Request schemas
+    # -------------------------------------------------------------------------
+
+    StartWorkflowExecutionRequest:
+      type: object
+      required:
+        - workflowName
+        - workflowVersion
+      properties:
+        workflowName:
+          type: string
+          minLength: 1
+        workflowVersion:
+          type: integer
+          minimum: 1
+        input:
+          type: object
+          additionalProperties: true
+          default: {}
+
+    PollAndClaimWorkflowStepsRequest:
+      type: object
+      required:
+        - workflowName
+        - workflowVersion
+        - workerId
+      properties:
+        workflowName:
+          type: string
+          minLength: 1
+        workflowVersion:
+          type: integer
+          minimum: 1
+        workerId:
+          type: string
+          minLength: 1
+        maxResults:
+          type: integer
+          minimum: 1
+          default: 1
+
+    KeepAliveWorkflowStepRequest:
+      type: object
+      required:
+        - workflowExecutionId
+        - stepName
+        - workerId
+      properties:
+        workflowExecutionId:
+          type: string
+          minLength: 1
+        stepName:
+          type: string
+          minLength: 1
+        workerId:
+          type: string
+          minLength: 1
+
+    CompleteWorkflowStepRequest:
+      type: object
+      required:
+        - workflowExecutionId
+        - stepName
+        - workerId
+      properties:
+        workflowExecutionId:
+          type: string
+          minLength: 1
+        stepName:
+          type: string
+          minLength: 1
+        workerId:
+          type: string
+          minLength: 1
+        stepOutput:
+          type: object
+          additionalProperties: true
+          default: {}
+
+    FailWorkflowStepRequest:
+      type: object
+      required:
+        - workflowExecutionId
+        - stepName
+        - workerId
+        - reason
+      properties:
+        workflowExecutionId:
+          type: string
+          minLength: 1
+        stepName:
+          type: string
+          minLength: 1
+        workerId:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+          minLength: 1
+
+    # -------------------------------------------------------------------------
+    # Response schemas
+    # -------------------------------------------------------------------------
+
+    ValidateWorkflowDefinitionResponse:
+      type: object
+      required:
+        - validation
+      properties:
+        validation:
+          $ref: '#/components/schemas/ValidationResult'
+
+    RegisterWorkflowDefinitionResponse:
+      type: object
+      required:
+        - definition
+      properties:
+        definition:
+          $ref: '#/components/schemas/WorkflowDefinition'
+
+    ListWorkflowDefinitionsResponse:
+      type: object
+      required:
+        - definitions
+      properties:
+        definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowDefinitionKey'
+
+    StartWorkflowExecutionResponse:
+      type: object
+      required:
+        - execution
+      properties:
+        execution:
+          $ref: '#/components/schemas/WorkflowExecution'
+
+    GetWorkflowExecutionResponse:
+      type: object
+      required:
+        - execution
+      properties:
+        execution:
+          $ref: '#/components/schemas/WorkflowExecution'
+
+    CancelWorkflowResponse:
+      type: object
+      required:
+        - execution
+      properties:
+        execution:
+          $ref: '#/components/schemas/WorkflowExecution'
+
+    PollAndClaimWorkflowStepsResponse:
+      type: object
+      required:
+        - steps
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStepExecution'
+
+    KeepAliveWorkflowStepResponse:
+      type: object
+      required:
+        - step
+      properties:
+        step:
+          $ref: '#/components/schemas/WorkflowStepExecution'
+
+    CompleteWorkflowStepResponse:
+      type: object
+      required:
+        - execution
+      properties:
+        execution:
+          $ref: '#/components/schemas/WorkflowExecution'
+
+    FailWorkflowStepResponse:
+      type: object
+      required:
+        - execution
+      properties:
+        execution:
+          $ref: '#/components/schemas/WorkflowExecution'
+
+  # ---------------------------------------------------------------------------
+  # Reusable error responses
+  # ---------------------------------------------------------------------------
+
+  responses:
+
+    BadRequest:
+      description: Invalid request arguments
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: invalid-argument
+            title: Invalid Argument
+            status: 400
+            detail: workflowName must not be empty
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: not-found
+            title: Not Found
+            status: 404
+            detail: workflow execution not found
+
+    Conflict:
+      description: Operation not valid for current resource state
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: conflict
+            title: Conflict
+            status: 409
+            detail: workflow execution is not running
+
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: internal-error
+            title: Internal Server Error
+            status: 500
+            detail: unexpected error
