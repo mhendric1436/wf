@@ -383,7 +383,8 @@ TEST_CASE("orchestrator rejects keep-alive from non-owning worker")
 
     REQUIRE_THROWS_AS(
         context.orchestrator.keepAliveStep(
-            execution.workflowExecutionId, "validateOrder", "worker-002"),
+            execution.workflowExecutionId, "validateOrder", "worker-002"
+        ),
         std::runtime_error
     );
 }
