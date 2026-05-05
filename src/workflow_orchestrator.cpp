@@ -482,6 +482,31 @@ WorkflowExecution WorkflowOrchestrator::failStep(
     return updatedExecution;
 }
 
+WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workflowExecutionId)
+{
+    validateExecutionId(workflowExecutionId);
+
+    const auto execution = executionStore_.find(workflowExecutionId);
+
+    if (!execution.has_value())
+    {
+        throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
+    }
+
+    if (execution->status != WorkflowExecutionStatus::Running)
+    {
+        throw std::runtime_error("workflow execution is not running: " + workflowExecutionId);
+    }
+
+    stepExecutionStore_.cancelByExecution(workflowExecutionId);
+
+    WorkflowExecution canceled = *execution;
+    canceled.status = WorkflowExecutionStatus::Canceled;
+    executionStore_.update(canceled);
+
+    return canceled;
+}
+
 std::optional<WorkflowExecution>
 WorkflowOrchestrator::getWorkflowExecution(const std::string& workflowExecutionId) const
 {

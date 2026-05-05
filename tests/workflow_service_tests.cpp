@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+using workflow::CancelWorkflowRequest;
 using workflow::CompleteWorkflowStepRequest;
 using workflow::FailWorkflowStepRequest;
 using workflow::GetWorkflowExecutionRequest;
@@ -730,4 +731,100 @@ TEST_CASE("service list-workflow-definitions reflects re-registration without du
     const auto response = context.service.listWorkflowDefinitions(ListWorkflowDefinitionsRequest{});
 
     REQUIRE(response.definitions.size() == 1);
+}
+
+TEST_CASE("service cancel marks workflow canceled and cancels pending step")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    const auto executionId = context.startExecution();
+
+    const auto response =
+        context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = executionId});
+
+    REQUIRE(response.execution.status == WorkflowExecutionStatus::Canceled);
+    REQUIRE(response.execution.workflowExecutionId == executionId);
+
+    const auto stored = context.executionStore.find(executionId);
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->status == WorkflowExecutionStatus::Canceled);
+
+    const auto step = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->status == StepExecutionStatus::Canceled);
+}
+
+TEST_CASE("service cancel marks workflow canceled and cancels running step")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    const auto executionId = context.claimInitialStep("worker-001");
+
+    const auto response =
+        context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = executionId});
+
+    REQUIRE(response.execution.status == WorkflowExecutionStatus::Canceled);
+
+    const auto step = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    REQUIRE(step.has_value());
+    REQUIRE(step->status == StepExecutionStatus::Canceled);
+    REQUIRE_FALSE(step->workerId.has_value());
+    REQUIRE_FALSE(step->leaseExpiresAt.has_value());
+}
+
+TEST_CASE("service cancel throws for an unknown execution id")
+{
+    TestContext context;
+
+    REQUIRE_THROWS_AS(
+        context.service.cancelWorkflow(
+            CancelWorkflowRequest{.workflowExecutionId = "nonexistent-id"}
+        ),
+        std::runtime_error
+    );
+}
+
+TEST_CASE("service cancel throws when execution is already completed")
+{
+    TestContext context({completeWorkflowDecision()});
+    context.registerValidDefinition();
+    const auto executionId = context.claimInitialStep("worker-001");
+
+    context.service.completeWorkflowStep(
+        CompleteWorkflowStepRequest{
+            .workflowExecutionId = executionId,
+            .stepName = "validateOrder",
+            .workerId = "worker-001",
+            .stepOutput = workflow::json::Value::object(),
+        }
+    );
+
+    REQUIRE_THROWS_AS(
+        context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = executionId}),
+        std::runtime_error
+    );
+}
+
+TEST_CASE("service cancel throws when execution is already canceled")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    const auto executionId = context.startExecution();
+
+    context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = executionId});
+
+    REQUIRE_THROWS_AS(
+        context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = executionId}),
+        std::runtime_error
+    );
+}
+
+TEST_CASE("service cancel throws for an empty execution id")
+{
+    TestContext context;
+
+    REQUIRE_THROWS_AS(
+        context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = ""}),
+        std::invalid_argument
+    );
 }

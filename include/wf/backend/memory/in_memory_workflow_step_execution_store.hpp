@@ -44,6 +44,8 @@ class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepEx
 
     void update(const WorkflowStepExecution& stepExecution) override;
 
+    void cancelByExecution(const std::string& workflowExecutionId) override;
+
     void remove(
         const std::string& workflowExecutionId,
         const std::string& stepName,

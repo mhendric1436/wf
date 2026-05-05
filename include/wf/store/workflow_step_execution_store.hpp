@@ -44,6 +44,8 @@ class WorkflowStepExecutionStore
 
     virtual void update(const WorkflowStepExecution& stepExecution) = 0;
 
+    virtual void cancelByExecution(const std::string& workflowExecutionId) = 0;
+
     virtual void remove(
         const std::string& workflowExecutionId,
         const std::string& stepName,

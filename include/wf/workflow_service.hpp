@@ -97,6 +97,16 @@ struct FailWorkflowStepResponse
     WorkflowExecution execution;
 };
 
+struct CancelWorkflowRequest
+{
+    std::string workflowExecutionId;
+};
+
+struct CancelWorkflowResponse
+{
+    WorkflowExecution execution;
+};
+
 struct GetWorkflowExecutionRequest
 {
     std::string workflowExecutionId;
@@ -139,6 +149,8 @@ class WorkflowService
     CompleteWorkflowStepResponse completeWorkflowStep(const CompleteWorkflowStepRequest& request);
 
     FailWorkflowStepResponse failWorkflowStep(const FailWorkflowStepRequest& request);
+
+    CancelWorkflowResponse cancelWorkflow(const CancelWorkflowRequest& request);
 
     GetWorkflowExecutionResponse
     getWorkflowExecution(const GetWorkflowExecutionRequest& request) const;

@@ -77,6 +77,13 @@ FailWorkflowStepResponse WorkflowService::failWorkflowStep(const FailWorkflowSte
     };
 }
 
+CancelWorkflowResponse WorkflowService::cancelWorkflow(const CancelWorkflowRequest& request)
+{
+    return CancelWorkflowResponse{
+        .execution = orchestrator_.cancelWorkflow(request.workflowExecutionId),
+    };
+}
+
 GetWorkflowExecutionResponse
 WorkflowService::getWorkflowExecution(const GetWorkflowExecutionRequest& request) const
 {

@@ -181,6 +181,34 @@ void InMemoryWorkflowStepExecutionStore::update(const WorkflowStepExecution& ste
     iter->second = stepExecution;
 }
 
+void InMemoryWorkflowStepExecutionStore::cancelByExecution(const std::string& workflowExecutionId)
+{
+    if (workflowExecutionId.empty())
+    {
+        throw std::invalid_argument("workflowExecutionId must not be empty");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (auto& [key, stepExecution] : stepExecutions_)
+    {
+        (void)key;
+
+        if (stepExecution.workflowExecutionId != workflowExecutionId)
+        {
+            continue;
+        }
+
+        if (stepExecution.status == StepExecutionStatus::Pending ||
+            stepExecution.status == StepExecutionStatus::Running)
+        {
+            stepExecution.status = StepExecutionStatus::Canceled;
+            stepExecution.workerId.reset();
+            stepExecution.leaseExpiresAt.reset();
+        }
+    }
+}
+
 void InMemoryWorkflowStepExecutionStore::remove(
     const std::string& workflowExecutionId,
     const std::string& stepName,

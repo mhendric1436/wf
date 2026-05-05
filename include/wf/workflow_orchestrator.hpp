@@ -59,6 +59,8 @@ class WorkflowOrchestrator
         const std::string& reason
     );
 
+    WorkflowExecution cancelWorkflow(const std::string& workflowExecutionId);
+
     std::optional<WorkflowExecution>
     getWorkflowExecution(const std::string& workflowExecutionId) const;
 

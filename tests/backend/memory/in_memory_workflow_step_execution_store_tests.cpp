@@ -445,3 +445,66 @@ TEST_CASE("pollAndClaim rejects invalid request values")
         std::invalid_argument
     );
 }
+
+TEST_CASE("cancelByExecution cancels pending and running steps for the execution")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
+
+    auto runningStep = makeStepExecution("wfexec-001", "chargePayment", 0);
+    runningStep.status = StepExecutionStatus::Running;
+    runningStep.workerId = "worker-001";
+    runningStep.leaseExpiresAt = std::chrono::system_clock::now() + std::chrono::seconds{30};
+    store.save(runningStep);
+
+    store.cancelByExecution("wfexec-001");
+
+    const auto pending = store.find("wfexec-001", "validateOrder", 0);
+    REQUIRE(pending.has_value());
+    REQUIRE(pending->status == StepExecutionStatus::Canceled);
+
+    const auto running = store.find("wfexec-001", "chargePayment", 0);
+    REQUIRE(running.has_value());
+    REQUIRE(running->status == StepExecutionStatus::Canceled);
+    REQUIRE_FALSE(running->workerId.has_value());
+    REQUIRE_FALSE(running->leaseExpiresAt.has_value());
+}
+
+TEST_CASE("cancelByExecution does not affect completed or failed steps")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    auto completed = makeStepExecution("wfexec-001", "validateOrder", 0);
+    completed.status = StepExecutionStatus::Completed;
+    store.save(completed);
+
+    auto failed = makeStepExecution("wfexec-001", "chargePayment", 0);
+    failed.status = StepExecutionStatus::Failed;
+    store.save(failed);
+
+    store.cancelByExecution("wfexec-001");
+
+    REQUIRE(store.find("wfexec-001", "validateOrder", 0)->status == StepExecutionStatus::Completed);
+    REQUIRE(store.find("wfexec-001", "chargePayment", 0)->status == StepExecutionStatus::Failed);
+}
+
+TEST_CASE("cancelByExecution only affects steps for the given execution id")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
+    store.save(makeStepExecution("wfexec-002", "validateOrder", 0));
+
+    store.cancelByExecution("wfexec-001");
+
+    REQUIRE(store.find("wfexec-001", "validateOrder", 0)->status == StepExecutionStatus::Canceled);
+    REQUIRE(store.find("wfexec-002", "validateOrder", 0)->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("cancelByExecution throws for an empty execution id")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    REQUIRE_THROWS_AS(store.cancelByExecution(""), std::invalid_argument);
+}
