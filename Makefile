@@ -59,7 +59,7 @@ $(WF_BIN): $(LIB) $(CMD_OBJ)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -MMD -MP -c $< -o $@
 
 test: $(TEST_BIN)
 	$(TEST_BIN)
@@ -109,3 +109,6 @@ help:
 	@echo "  CXXFLAGS=$(CXXFLAGS)"
 	@echo "  CPPFLAGS=$(CPPFLAGS)"
 	@echo "  PLANTUML=$(PLANTUML)"
+
+DEP_FILES := $(OBJ:.o=.d) $(TEST_OBJ:.o=.d) $(CMD_OBJ:.o=.d) $(CATCH_OBJ:.o=.d)
+-include $(DEP_FILES)
