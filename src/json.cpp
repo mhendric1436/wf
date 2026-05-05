@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <charconv>
+#include <cstdio>
 #include <sstream>
 
 namespace workflow::json
@@ -592,6 +593,125 @@ Value parse(const std::string& text)
 {
     Parser parser(text);
     return parser.parseDocument();
+}
+
+namespace
+{
+
+void appendEscaped(
+    std::string& out,
+    const std::string& s
+)
+{
+    out += '"';
+    for (const unsigned char c : s)
+    {
+        switch (c)
+        {
+        case '"':
+            out += "\\\"";
+            break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\b':
+            out += "\\b";
+            break;
+        case '\f':
+            out += "\\f";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            if (c < 0x20)
+            {
+                char buf[7];
+                std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                out += buf;
+            }
+            else
+            {
+                out += static_cast<char>(c);
+            }
+            break;
+        }
+    }
+    out += '"';
+}
+
+} // namespace
+
+std::string stringify(const Value& value)
+{
+    if (value.isNull())
+    {
+        return "null";
+    }
+
+    if (value.isBool())
+    {
+        return value.asBool() ? "true" : "false";
+    }
+
+    if (value.isInt())
+    {
+        return std::to_string(value.asInt());
+    }
+
+    if (value.isDouble())
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%.17g", value.asDouble());
+        return buf;
+    }
+
+    std::string out;
+
+    if (value.isString())
+    {
+        appendEscaped(out, value.asString());
+        return out;
+    }
+
+    if (value.isArray())
+    {
+        out += '[';
+        bool first = true;
+        for (const auto& item : value.asArray())
+        {
+            if (!first)
+            {
+                out += ',';
+            }
+            out += stringify(item);
+            first = false;
+        }
+        out += ']';
+        return out;
+    }
+
+    out += '{';
+    bool first = true;
+    for (const auto& [key, val] : value.asObject())
+    {
+        if (!first)
+        {
+            out += ',';
+        }
+        appendEscaped(out, key);
+        out += ':';
+        out += stringify(val);
+        first = false;
+    }
+    out += '}';
+    return out;
 }
 
 } // namespace workflow::json

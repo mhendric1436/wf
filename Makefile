@@ -5,6 +5,7 @@ CPPFLAGS := -Iinclude -Ithird_party
 FORMAT := clang-format
 PLANTUML ?= plantuml
 PLANTUML_FLAGS ?= -DPLANTUML_LIMIT_SIZE=16384 -Xmx512m
+LDFLAGS ?= -lsqlite3
 
 BUILD_DIR := build
 OBJ_DIR := $(BUILD_DIR)/obj
@@ -52,11 +53,11 @@ $(LIB): format $(OBJ)
 
 $(TEST_BIN): $(LIB) $(TEST_OBJ) $(CATCH_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(TEST_OBJ) $(CATCH_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(TEST_OBJ) $(CATCH_OBJ) $(LIB) $(LDFLAGS)
 
 $(WF_BIN): $(LIB) $(CMD_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(CMD_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(CMD_OBJ) $(LIB) $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
@@ -111,6 +112,7 @@ help:
 	@echo "  CPPFLAGS=$(CPPFLAGS)"
 	@echo "  PLANTUML=$(PLANTUML)"
 	@echo "  PLANTUML_FLAGS=$(PLANTUML_FLAGS)"
+	@echo "  LDFLAGS=$(LDFLAGS)"
 
 DEP_FILES := $(OBJ:.o=.d) $(TEST_OBJ:.o=.d) $(CMD_OBJ:.o=.d) $(CATCH_OBJ:.o=.d)
 -include $(DEP_FILES)

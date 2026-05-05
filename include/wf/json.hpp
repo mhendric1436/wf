@@ -81,4 +81,6 @@ class Value
 
 Value parse(const std::string& text);
 
+std::string stringify(const Value& value);
+
 } // namespace workflow::json
