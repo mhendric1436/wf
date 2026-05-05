@@ -15,7 +15,10 @@ WorkflowService::WorkflowService(
 
 WorkflowService::~WorkflowService()
 {
-    stopping_ = true;
+    {
+        std::lock_guard<std::mutex> lock(sweepMutex_);
+        stopping_ = true;
+    }
     sweepCv_.notify_one();
     sweepThread_.join();
 }
