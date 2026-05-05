@@ -9,7 +9,7 @@ actor "Frontend API Tier" as Frontend
 actor "Backend Worker Tier" as Worker
 
 participant "WorkflowService" as Service
-participant "WorkflowOrchestrator" as Orchestrator
+participant "WorkflowOrchestrator\n(stripe lock per executionId)" as Orchestrator
 participant "WorkflowDefinitionStore" as DefStore
 participant "WorkflowExecutionStore" as ExecStore
 participant "WorkflowStepExecutionStore" as StepStore
@@ -29,12 +29,12 @@ Service -> Orchestrator : startWorkflow(workflowName, workflowVersion, input)
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
 
-Orchestrator -> Orchestrator : create WorkflowExecution\nstatus = Running\ncurrentStepName = startWorkflowStepName\ncurrentStepAttempt = 0
+Orchestrator -> Orchestrator : create WorkflowExecution\nstatus = Running\ncurrentStepName = startWorkflowStepName\ncurrentStepAttempt = 0\nstartedAt = now()
 
 Orchestrator -> ExecStore : save(execution)
 ExecStore --> Orchestrator : ok
 
-Orchestrator -> Orchestrator : create first WorkflowStepExecution\nstatus = Pending\nstepName = startWorkflowStepName\nattempt = 0
+Orchestrator -> Orchestrator : create first WorkflowStepExecution\nstatus = Pending\nstepName = startWorkflowStepName\nattempt = 0\ncreatedAt = now()
 
 Orchestrator -> StepStore : save(stepExecution)
 StepStore --> Orchestrator : ok
@@ -71,18 +71,19 @@ Orchestrator -> StepStore : pollAndClaim(workflowName, workflowVersion,\nworkerI
 note right of StepStore
 Atomic backend operation:
 1. find Pending matching steps
-2. reclaim expired Claimed steps
-3. mark them Claimed
+2. reclaim expired Running steps
+3. mark them Running
 4. assign workerId
 5. assign leaseExpiresAt
-6. return claimed steps
+6. set startedAt = now()
+7. return claimed steps
 end note
 
 StepStore --> Orchestrator : vector<WorkflowStepExecution>
 Orchestrator --> Service : PollAndClaimWorkflowStepsResponse
 Service --> Worker : claimed step executions
 
-== Worker keeps a claimed step alive ==
+== Worker keeps a running step alive ==
 
 Worker -> Service : keepAliveWorkflowStep(request)
 note right of Worker
@@ -95,6 +96,9 @@ No leaseDuration is supplied by caller.
 end note
 
 Service -> Orchestrator : keepAliveStep(workflowExecutionId, stepName, workerId)
+note right of Orchestrator
+Acquires stripe lock for executionId.
+end note
 
 Orchestrator -> ExecStore : find(workflowExecutionId)
 ExecStore --> Orchestrator : WorkflowExecution
@@ -110,7 +114,7 @@ Orchestrator -> StepStore : keepAlive(workflowExecutionId, stepName,\nattempt, w
 note right of StepStore
 Validates:
 - step exists
-- status is Claimed
+- status is Running
 - workerId owns claim
 - lease has not expired
 
@@ -121,7 +125,7 @@ StepStore --> Orchestrator : WorkflowStepExecution
 Orchestrator --> Service : KeepAliveWorkflowStepResponse
 Service --> Worker : updated step lease
 
-== Worker completes a claimed step ==
+== Worker completes a running step ==
 
 Worker -> Worker : execute business step outside WorkflowService
 
@@ -135,6 +139,9 @@ Request includes:
 end note
 
 Service -> Orchestrator : completeStep(workflowExecutionId, stepName, workerId, stepOutput)
+note right of Orchestrator
+Acquires stripe lock for executionId.
+end note
 
 Orchestrator -> ExecStore : find(workflowExecutionId)
 ExecStore --> Orchestrator : WorkflowExecution
@@ -145,16 +152,16 @@ StepStore --> Orchestrator : WorkflowStepExecution
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
 
-Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future
+Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Running\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future
 
-Orchestrator -> StepStore : update(stepExecution)\nstatus = Completed\noutput = stepOutput\nclear leaseExpiresAt
+Orchestrator -> StepStore : update(stepExecution)\nstatus = Completed\noutput = stepOutput\ncompletedAt = now()\nclear leaseExpiresAt
 StepStore --> Orchestrator : ok
 
 Orchestrator -> Logic : decideNextStep(context)
 Logic --> Orchestrator : NextStepDecision
 
 alt workflow complete
-    Orchestrator -> Orchestrator : execution.status = Completed\nexecution.state = updatedState
+    Orchestrator -> Orchestrator : execution.status = Completed\nexecution.state = updatedState\nexecution.completedAt = now()
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
     Orchestrator --> Service : WorkflowExecution
@@ -165,14 +172,14 @@ else next step selected
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
 
-    Orchestrator -> StepStore : save(nextStepExecution)\nstatus = Pending\nstepName = nextStepName\nattempt = 0
+    Orchestrator -> StepStore : save(nextStepExecution)\nstatus = Pending\nstepName = nextStepName\nattempt = 0\ncreatedAt = now()
     StepStore --> Orchestrator : ok
 
     Orchestrator --> Service : WorkflowExecution
     Service --> Worker : CompleteWorkflowStepResponse
 end
 
-== Worker fails a claimed step ==
+== Worker fails a running step ==
 
 Worker -> Service : failWorkflowStep(request)
 note right of Worker
@@ -184,6 +191,9 @@ Request includes:
 end note
 
 Service -> Orchestrator : failStep(workflowExecutionId, stepName, workerId, reason)
+note right of Orchestrator
+Acquires stripe lock for executionId.
+end note
 
 Orchestrator -> ExecStore : find(workflowExecutionId)
 ExecStore --> Orchestrator : WorkflowExecution
@@ -194,10 +204,10 @@ StepStore --> Orchestrator : WorkflowStepExecution
 Orchestrator -> DefStore : find(workflowName, workflowVersion)
 DefStore --> Orchestrator : WorkflowDefinition
 
-Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Claimed\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future\nfind step definition
+Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Running\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future\nfind step definition
 
 alt retry attempts remain
-    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\nclear leaseExpiresAt
+    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\ncompletedAt = now()\nclear leaseExpiresAt
     StepStore --> Orchestrator : ok
 
     Orchestrator -> Orchestrator : execution.currentStepAttempt += 1
@@ -205,16 +215,16 @@ alt retry attempts remain
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
 
-    Orchestrator -> StepStore : save(retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt
+    Orchestrator -> StepStore : save(retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt\ncreatedAt = now()
     StepStore --> Orchestrator : ok
 
     Orchestrator --> Service : WorkflowExecution
     Service --> Worker : FailWorkflowStepResponse
 else max retries exceeded
-    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\nclear leaseExpiresAt
+    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\ncompletedAt = now()\nclear leaseExpiresAt
     StepStore --> Orchestrator : ok
 
-    Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = reason
+    Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = reason\nexecution.completedAt = now()
 
     Orchestrator -> ExecStore : update(execution)
     ExecStore --> Orchestrator : ok
@@ -222,5 +232,83 @@ else max retries exceeded
     Orchestrator --> Service : WorkflowExecution
     Service --> Worker : FailWorkflowStepResponse
 end
+
+== Frontend cancels a running workflow ==
+
+Frontend -> Service : cancelWorkflow(request)
+note right of Frontend
+Request includes:
+- workflowExecutionId
+end note
+
+Service -> Orchestrator : cancelWorkflow(workflowExecutionId)
+note right of Orchestrator
+Acquires stripe lock for executionId.
+end note
+
+Orchestrator -> ExecStore : find(workflowExecutionId)
+ExecStore --> Orchestrator : WorkflowExecution
+
+Orchestrator -> Orchestrator : validate execution is Running\nexecution.status = Canceled\nexecution.completedAt = now()
+
+Orchestrator -> ExecStore : update(execution)
+ExecStore --> Orchestrator : ok
+
+Orchestrator -> StepStore : cancelByExecution(workflowExecutionId)
+note right of StepStore
+Sets all Pending and Running steps
+to Canceled with completedAt = now().
+end note
+StepStore --> Orchestrator : ok
+
+Orchestrator --> Service : WorkflowExecution
+Service --> Frontend : CancelWorkflowResponse
+
+== Background sweep detects expired lease ==
+
+note over Service
+WorkflowService runs a background sweep thread.
+Default interval: 30 seconds.
+Wakes immediately on shutdown.
+end note
+
+Service -> Orchestrator : sweepExpiredLeases()
+
+Orchestrator -> StepStore : findExpiredRunning()
+note right of StepStore
+Returns all Running steps where
+leaseExpiresAt <= now().
+end note
+StepStore --> Orchestrator : vector<WorkflowStepExecution> (expired)
+
+loop each expired step
+    Orchestrator -> Orchestrator : acquire stripe lock for\nstep.workflowExecutionId
+
+    Orchestrator -> ExecStore : find(workflowExecutionId)
+    ExecStore --> Orchestrator : WorkflowExecution
+
+    Orchestrator -> Orchestrator : guard: skip if execution not Running\nor attempt does not match
+
+    Orchestrator -> DefStore : find(workflowName, workflowVersion)
+    DefStore --> Orchestrator : WorkflowDefinition
+
+    alt retry attempts remain
+        Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = lease expired\nclear leaseExpiresAt
+
+        Orchestrator -> Orchestrator : execution.currentStepAttempt += 1
+
+        Orchestrator -> ExecStore : update(execution)
+
+        Orchestrator -> StepStore : save(retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt\ncreatedAt = now()
+    else max retries exceeded
+        Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = lease expired\nclear leaseExpiresAt
+
+        Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = lease expired\nexecution.completedAt = now()
+
+        Orchestrator -> ExecStore : update(execution)
+    end
+end
+
+Orchestrator --> Service : SweepResult\n(retriedCount, failedCount)
 
 @enduml

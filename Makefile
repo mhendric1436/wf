@@ -4,6 +4,7 @@ CPPFLAGS := -Iinclude -Ithird_party
 
 FORMAT := clang-format
 PLANTUML ?= plantuml
+PLANTUML_FLAGS ?= -DPLANTUML_LIMIT_SIZE=16384 -Xmx512m
 
 BUILD_DIR := build
 OBJ_DIR := $(BUILD_DIR)/obj
@@ -73,7 +74,7 @@ format-check:
 docs-png: $(PNG_FILES)
 
 $(DOCS_DIR)/%.png: $(DOCS_DIR)/%.puml
-	$(PLANTUML) -tpng $<
+	$(PLANTUML) $(PLANTUML_FLAGS) -tpng $<
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -109,6 +110,7 @@ help:
 	@echo "  CXXFLAGS=$(CXXFLAGS)"
 	@echo "  CPPFLAGS=$(CPPFLAGS)"
 	@echo "  PLANTUML=$(PLANTUML)"
+	@echo "  PLANTUML_FLAGS=$(PLANTUML_FLAGS)"
 
 DEP_FILES := $(OBJ:.o=.d) $(TEST_OBJ:.o=.d) $(CMD_OBJ:.o=.d) $(CATCH_OBJ:.o=.d)
 -include $(DEP_FILES)

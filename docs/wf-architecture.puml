@@ -20,30 +20,39 @@ package "wf core" {
     component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowStep" as DefinitionModel
     component "workflow_parser.hpp / workflow_parser.cpp\nParser + Validator" as Parser
 
-    component "workflow_execution.hpp\nWorkflowExecution\nWorkflowExecutionStatus\nStepExecutionStatus" as ExecutionModel
-    component "workflow_step_execution.hpp\nWorkflowStepExecution\nworkerId\nleaseExpiresAt" as StepExecutionModel
+    component "workflow_execution.hpp\nWorkflowExecution (startedAt, completedAt)\nWorkflowExecutionStatus\nStepExecutionStatus" as ExecutionModel
+    component "workflow_step_execution.hpp\nWorkflowStepExecution\nworkerId, leaseExpiresAt\ncreatedAt, startedAt, completedAt" as StepExecutionModel
 
     component "workflow_logic.hpp\nWorkflowLogic\nNextStepDecision" as Logic
-    component "workflow_orchestrator.hpp / workflow_orchestrator.cpp\nWorkflowOrchestrator" as Orchestrator
-    component "workflow_service.hpp / workflow_service.cpp\nWorkflowService" as Service
+    component "workflow_orchestrator.hpp / workflow_orchestrator.cpp\nWorkflowOrchestrator\n64-stripe per-execution locking\nsweepExpiredLeases()" as Orchestrator
+    component "workflow_service.hpp / workflow_service.cpp\nWorkflowService\nBackground sweep thread" as Service
+}
+
+package "cmd" {
+    component "cmd/main.cpp\nwf CLI binary\nvalidate | parse" as CLI
+}
+
+package "examples" {
+    artifact "examples/order-processing-workflow.json" as ExampleWorkflow
 }
 
 package "store interfaces" {
     interface "WorkflowDefinitionStore" as DefinitionStore
     interface "WorkflowExecutionStore" as ExecutionStore
-    interface "WorkflowStepExecutionStore" as StepExecutionStore
+    interface "WorkflowStepExecutionStore\npollAndClaim\nkeepAlive\ncancelByExecution\nfindExpiredRunning" as StepExecutionStore
 }
 
 package "backend/memory" {
-    component "InMemoryWorkflowDefinitionStore" as MemoryDefinitionStore
-    component "InMemoryWorkflowExecutionStore" as MemoryExecutionStore
-    component "InMemoryWorkflowStepExecutionStore\nmutex-protected\npollAndClaim + keepAlive" as MemoryStepExecutionStore
+    component "InMemoryWorkflowDefinitionStore\nmutex-protected" as MemoryDefinitionStore
+    component "InMemoryWorkflowExecutionStore\nmutex-protected" as MemoryExecutionStore
+    component "InMemoryWorkflowStepExecutionStore\nmutex-protected\natomic pollAndClaim + keepAlive" as MemoryStepExecutionStore
 }
 
 package "tests" {
     component "duration_tests.cpp" as DurationTests
     component "workflow_parser_tests.cpp" as ParserTests
     component "workflow_orchestrator_tests.cpp" as OrchestratorTests
+    component "workflow_service_tests.cpp" as ServiceTests
     component "backend/memory/\nin_memory_workflow_definition_store_tests.cpp" as DefinitionStoreTests
     component "backend/memory/\nin_memory_workflow_execution_store_tests.cpp" as ExecutionStoreTests
     component "backend/memory/\nin_memory_workflow_step_execution_store_tests.cpp" as StepExecutionStoreTests
@@ -55,17 +64,20 @@ package "docs" {
     artifact "wf-workflow-execution-sequence.puml" as SequenceDoc
 }
 
-Frontend --> Service : startWorkflowExecution
+Frontend --> Service : startWorkflowExecution\ncancelWorkflow\ngetWorkflowExecution\nlistWorkflowDefinitions
 Worker --> Service : pollAndClaimWorkflowSteps\nkeepAliveWorkflowStep\ncompleteWorkflowStep\nfailWorkflowStep
 
+CLI --> Parser : validate / parse
+
 Readme --> Logo : displays
+ExampleWorkflow ..> Parser : used as input
 
 Service --> Orchestrator : delegates workflow operations
 Service --> Parser : validate/register definitions
 
 Orchestrator --> DefinitionStore : load/save definitions
 Orchestrator --> ExecutionStore : save/update executions
-Orchestrator --> StepExecutionStore : create/poll-and-claim/keep-alive/update steps
+Orchestrator --> StepExecutionStore : create/poll-and-claim/keep-alive/update/cancel steps
 Orchestrator --> Logic : decide next step
 Orchestrator --> Duration : calculate lease duration\nfrom step expectedExecutionTime
 
@@ -88,6 +100,7 @@ MemoryStepExecutionStore --> StepExecutionModel
 DurationTests --> Duration
 ParserTests --> Parser
 OrchestratorTests --> Orchestrator
+ServiceTests --> Service
 DefinitionStoreTests --> MemoryDefinitionStore
 ExecutionStoreTests --> MemoryExecutionStore
 StepExecutionStoreTests --> MemoryStepExecutionStore
@@ -123,18 +136,26 @@ pollAndClaim(
 
 Store atomically:
 1. finds Pending matching steps
-2. reclaims expired Claimed steps
-3. marks steps Claimed
+2. reclaims expired Running steps
+3. marks steps Running
 4. assigns workerId
 5. assigns leaseExpiresAt
-6. returns claimed steps
+6. sets startedAt
+7. returns claimed steps
+
+Sweep operations:
+- findExpiredRunning()
+- cancelByExecution(executionId)
 end note
 
 note bottom of Service
-WorkflowService exposes two execution surfaces:
+WorkflowService:
 
 Frontend:
 - startWorkflowExecution
+- cancelWorkflow
+- getWorkflowExecution
+- listWorkflowDefinitions
 
 Worker:
 - pollAndClaimWorkflowSteps
@@ -142,6 +163,9 @@ Worker:
 - completeWorkflowStep
 - failWorkflowStep
 
+Background sweep thread runs
+sweepExpiredLeases() on a
+configurable interval (default 30s).
 Callers do not supply leaseDuration.
 end note
 
@@ -152,6 +176,17 @@ WorkflowOrchestrator owns coordination across:
 - step executions
 - business logic
 - internal lease calculation
+
+Per-execution striped locking (64 stripes):
+Independent executions proceed concurrently.
+completeStep / failStep / keepAliveStep /
+cancelWorkflow each acquire only the
+stripe for that executionId.
+
+sweepExpiredLeases():
+Acquires stripe per expired step.
+Retries or fails execution based
+on remaining maxRetries.
 end note
 
 @enduml
