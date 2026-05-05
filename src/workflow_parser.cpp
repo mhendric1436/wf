@@ -11,7 +11,17 @@ namespace workflow
 namespace
 {
 
-const std::regex NAME_PATTERN("^[A-Za-z][A-Za-z0-9_-]*$");
+constexpr const char* FIELD_WORKFLOW_NAME = "workflowName";
+constexpr const char* FIELD_WORKFLOW_VERSION = "workflowVersion";
+constexpr const char* FIELD_START_WORKFLOW_STEP_NAME = "startWorkflowStepName";
+constexpr const char* FIELD_EXPECTED_EXECUTION_TIME = "expectedExecutionTime";
+constexpr const char* FIELD_STEPS = "steps";
+constexpr const char* FIELD_NAME = "name";
+constexpr const char* FIELD_MAX_RETRIES = "maxRetries";
+constexpr const char* ROOT_PATH = "$";
+constexpr const char* NAME_PATTERN_STRING = "^[A-Za-z][A-Za-z0-9_-]*$";
+
+const std::regex NAME_PATTERN(NAME_PATTERN_STRING);
 
 const std::regex ISO_8601_DURATION_PATTERN(
     "^P(?!$)"
@@ -104,7 +114,7 @@ void validateRequiredNameField(
 
     if (!isValidName(name))
     {
-        result.addError(path + "." + fieldName + " must match pattern ^[A-Za-z][A-Za-z0-9_-]*$");
+        result.addError(path + "." + fieldName + " must match pattern " + NAME_PATTERN_STRING);
     }
 }
 
@@ -182,8 +192,11 @@ void validateNoAdditionalTopLevelFields(
 )
 {
     static const std::set<std::string> allowedFields = {
-        "workflowName",          "workflowVersion", "startWorkflowStepName",
-        "expectedExecutionTime", "steps",
+        FIELD_WORKFLOW_NAME,
+        FIELD_WORKFLOW_VERSION,
+        FIELD_START_WORKFLOW_STEP_NAME,
+        FIELD_EXPECTED_EXECUTION_TIME,
+        FIELD_STEPS,
     };
 
     for (const auto& [key, ignored] : value.asObject())
@@ -203,7 +216,7 @@ ValidationResult validateWorkflowJson(const json::Value& value)
 {
     ValidationResult result;
 
-    requireObject(value, result, "$");
+    requireObject(value, result, ROOT_PATH);
 
     if (!result.valid)
     {
@@ -212,38 +225,38 @@ ValidationResult validateWorkflowJson(const json::Value& value)
 
     validateNoAdditionalTopLevelFields(value, result);
 
-    validateRequiredNameField(value, result, "workflowName", "$");
-    validateRequiredStringField(value, result, "startWorkflowStepName", "$");
-    validateRequiredDurationField(value, result, "expectedExecutionTime", "$");
+    validateRequiredNameField(value, result, FIELD_WORKFLOW_NAME, ROOT_PATH);
+    validateRequiredStringField(value, result, FIELD_START_WORKFLOW_STEP_NAME, ROOT_PATH);
+    validateRequiredDurationField(value, result, FIELD_EXPECTED_EXECUTION_TIME, ROOT_PATH);
 
-    requireField(value, result, "workflowVersion", "$");
+    requireField(value, result, FIELD_WORKFLOW_VERSION, ROOT_PATH);
 
-    if (value.contains("workflowVersion"))
+    if (value.contains(FIELD_WORKFLOW_VERSION))
     {
-        if (!value.at("workflowVersion").isInt())
+        if (!value.at(FIELD_WORKFLOW_VERSION).isInt())
         {
             result.addError("$.workflowVersion must be an integer");
         }
-        else if (value.at("workflowVersion").asInt() < 1)
+        else if (value.at(FIELD_WORKFLOW_VERSION).asInt() < 1)
         {
             result.addError("$.workflowVersion must be greater than or equal to 1");
         }
     }
 
-    requireField(value, result, "steps", "$");
+    requireField(value, result, FIELD_STEPS, ROOT_PATH);
 
-    if (!value.contains("steps"))
+    if (!value.contains(FIELD_STEPS))
     {
         return result;
     }
 
-    if (!value.at("steps").isArray())
+    if (!value.at(FIELD_STEPS).isArray())
     {
         result.addError("$.steps must be an array");
         return result;
     }
 
-    const auto& steps = value.at("steps").asArray();
+    const auto& steps = value.at(FIELD_STEPS).asArray();
 
     if (steps.empty())
     {
@@ -264,13 +277,13 @@ ValidationResult validateWorkflowJson(const json::Value& value)
             continue;
         }
 
-        validateRequiredNameField(step, result, "name", path);
-        validateOptionalDurationField(step, result, "expectedExecutionTime", path);
-        validateOptionalNonNegativeIntegerField(step, result, "maxRetries", path);
+        validateRequiredNameField(step, result, FIELD_NAME, path);
+        validateOptionalDurationField(step, result, FIELD_EXPECTED_EXECUTION_TIME, path);
+        validateOptionalNonNegativeIntegerField(step, result, FIELD_MAX_RETRIES, path);
 
-        if (step.contains("name") && step.at("name").isString())
+        if (step.contains(FIELD_NAME) && step.at(FIELD_NAME).isString())
         {
-            const auto name = step.at("name").asString();
+            const auto name = step.at(FIELD_NAME).asString();
 
             if (stepNames.contains(name))
             {
@@ -283,9 +296,10 @@ ValidationResult validateWorkflowJson(const json::Value& value)
         }
     }
 
-    if (value.contains("startWorkflowStepName") && value.at("startWorkflowStepName").isString())
+    if (value.contains(FIELD_START_WORKFLOW_STEP_NAME) &&
+        value.at(FIELD_START_WORKFLOW_STEP_NAME).isString())
     {
-        const auto startStepName = value.at("startWorkflowStepName").asString();
+        const auto startStepName = value.at(FIELD_START_WORKFLOW_STEP_NAME).asString();
 
         if (!stepNames.contains(startStepName))
         {
@@ -314,29 +328,30 @@ WorkflowDefinition parseWorkflowDefinition(const json::Value& value)
     }
 
     WorkflowDefinition workflow;
-    workflow.workflowName = value.at("workflowName").asString();
-    workflow.workflowVersion = value.at("workflowVersion").asInt();
-    workflow.startWorkflowStepName = value.at("startWorkflowStepName").asString();
-    workflow.expectedExecutionTime = value.at("expectedExecutionTime").asString();
+    workflow.workflowName = value.at(FIELD_WORKFLOW_NAME).asString();
+    workflow.workflowVersion = value.at(FIELD_WORKFLOW_VERSION).asInt();
+    workflow.startWorkflowStepName = value.at(FIELD_START_WORKFLOW_STEP_NAME).asString();
+    workflow.expectedExecutionTime = value.at(FIELD_EXPECTED_EXECUTION_TIME).asString();
 
-    for (const auto& stepValue : value.at("steps").asArray())
+    for (const auto& stepValue : value.at(FIELD_STEPS).asArray())
     {
         WorkflowStep step;
-        step.name = stepValue.at("name").asString();
+        step.name = stepValue.at(FIELD_NAME).asString();
 
-        if (stepValue.contains("expectedExecutionTime"))
+        if (stepValue.contains(FIELD_EXPECTED_EXECUTION_TIME))
         {
-            step.expectedExecutionTime = stepValue.at("expectedExecutionTime").asString();
+            step.expectedExecutionTime = stepValue.at(FIELD_EXPECTED_EXECUTION_TIME).asString();
         }
 
-        if (stepValue.contains("maxRetries"))
+        if (stepValue.contains(FIELD_MAX_RETRIES))
         {
-            step.maxRetries = stepValue.at("maxRetries").asInt();
+            step.maxRetries = stepValue.at(FIELD_MAX_RETRIES).asInt();
         }
 
         for (const auto& [key, fieldValue] : stepValue.asObject())
         {
-            if (key != "name" && key != "expectedExecutionTime" && key != "maxRetries")
+            if (key != FIELD_NAME && key != FIELD_EXPECTED_EXECUTION_TIME &&
+                key != FIELD_MAX_RETRIES)
             {
                 step.additionalFields.emplace(key, fieldValue);
             }
