@@ -126,6 +126,15 @@ struct ListWorkflowDefinitionsResponse
     std::vector<WorkflowDefinitionKey> definitions;
 };
 
+struct SweepExpiredLeasesRequest
+{
+};
+
+struct SweepExpiredLeasesResponse
+{
+    SweepResult result;
+};
+
 class WorkflowService
 {
   public:
@@ -157,6 +166,8 @@ class WorkflowService
 
     ListWorkflowDefinitionsResponse
     listWorkflowDefinitions(const ListWorkflowDefinitionsRequest& request) const;
+
+    SweepExpiredLeasesResponse sweepExpiredLeases(const SweepExpiredLeasesRequest& request);
 
   private:
     WorkflowOrchestrator& orchestrator_;

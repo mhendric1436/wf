@@ -46,6 +46,8 @@ class WorkflowStepExecutionStore
 
     virtual void cancelByExecution(const std::string& workflowExecutionId) = 0;
 
+    virtual std::vector<WorkflowStepExecution> findExpiredRunning() const = 0;
+
     virtual void remove(
         const std::string& workflowExecutionId,
         const std::string& stepName,

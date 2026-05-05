@@ -16,6 +16,12 @@
 namespace workflow
 {
 
+struct SweepResult
+{
+    std::size_t retriedCount = 0;
+    std::size_t failedCount = 0;
+};
+
 class WorkflowOrchestrator
 {
   public:
@@ -60,6 +66,8 @@ class WorkflowOrchestrator
     );
 
     WorkflowExecution cancelWorkflow(const std::string& workflowExecutionId);
+
+    SweepResult sweepExpiredLeases();
 
     std::optional<WorkflowExecution>
     getWorkflowExecution(const std::string& workflowExecutionId) const;

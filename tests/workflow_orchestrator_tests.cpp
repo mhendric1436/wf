@@ -388,3 +388,120 @@ TEST_CASE("orchestrator rejects keep-alive from non-owning worker")
         std::runtime_error
     );
 }
+
+namespace
+{
+
+void expireLease(
+    TestContext& context,
+    const std::string& workflowExecutionId,
+    const std::string& stepName,
+    int attempt
+)
+{
+    auto step = context.stepExecutionStore.find(workflowExecutionId, stepName, attempt).value();
+    step.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    context.stepExecutionStore.update(step);
+}
+
+} // namespace
+
+TEST_CASE("sweepExpiredLeases returns {0,0} when no expired steps exist")
+{
+    TestContext context;
+    startWorkflow(context);
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(result.retriedCount == 0);
+    REQUIRE(result.failedCount == 0);
+}
+
+TEST_CASE("sweepExpiredLeases retries expired step when attempts remain")
+{
+    TestContext context(makeWorkflowDefinition(2));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(result.retriedCount == 1);
+    REQUIRE(result.failedCount == 0);
+
+    const auto failedStep =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(failedStep.has_value());
+    REQUIRE(failedStep->status == StepExecutionStatus::Failed);
+    REQUIRE(failedStep->failureReason == "lease expired");
+    REQUIRE_FALSE(failedStep->leaseExpiresAt.has_value());
+
+    const auto retryStep =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 1);
+    REQUIRE(retryStep.has_value());
+    REQUIRE(retryStep->status == StepExecutionStatus::Pending);
+
+    const auto updatedExecution = context.executionStore.find(execution.workflowExecutionId);
+    REQUIRE(updatedExecution.has_value());
+    REQUIRE(updatedExecution->status == WorkflowExecutionStatus::Running);
+    REQUIRE(updatedExecution->currentStepAttempt == 1);
+}
+
+TEST_CASE("sweepExpiredLeases fails workflow when no retries remain")
+{
+    TestContext context(makeWorkflowDefinition(0));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(result.retriedCount == 0);
+    REQUIRE(result.failedCount == 1);
+
+    const auto failedStep =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    REQUIRE(failedStep.has_value());
+    REQUIRE(failedStep->status == StepExecutionStatus::Failed);
+
+    const auto updatedExecution = context.executionStore.find(execution.workflowExecutionId);
+    REQUIRE(updatedExecution.has_value());
+    REQUIRE(updatedExecution->status == WorkflowExecutionStatus::Failed);
+    REQUIRE(updatedExecution->failureReason == "lease expired");
+}
+
+TEST_CASE("sweepExpiredLeases is idempotent on a second call after retry")
+{
+    TestContext context(makeWorkflowDefinition(2));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    context.orchestrator.sweepExpiredLeases();
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(result.retriedCount == 0);
+    REQUIRE(result.failedCount == 0);
+}
+
+TEST_CASE("sweepExpiredLeases skips step whose workflow execution is not running")
+{
+    TestContext context(makeWorkflowDefinition(2));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    auto runningStep =
+        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0).value();
+    runningStep.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    context.stepExecutionStore.update(runningStep);
+
+    auto canceledExecution = context.executionStore.find(execution.workflowExecutionId).value();
+    canceledExecution.status = WorkflowExecutionStatus::Canceled;
+    context.executionStore.update(canceledExecution);
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(result.retriedCount == 0);
+    REQUIRE(result.failedCount == 0);
+}

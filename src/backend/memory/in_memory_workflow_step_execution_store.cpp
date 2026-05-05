@@ -209,6 +209,37 @@ void InMemoryWorkflowStepExecutionStore::cancelByExecution(const std::string& wo
     }
 }
 
+std::vector<WorkflowStepExecution> InMemoryWorkflowStepExecutionStore::findExpiredRunning() const
+{
+    const auto now = std::chrono::system_clock::now();
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    std::vector<WorkflowStepExecution> result;
+
+    for (const auto& [key, stepExecution] : stepExecutions_)
+    {
+        (void)key;
+
+        if (stepExecution.status != StepExecutionStatus::Running)
+        {
+            continue;
+        }
+
+        if (!stepExecution.leaseExpiresAt.has_value())
+        {
+            continue;
+        }
+
+        if (stepExecution.leaseExpiresAt.value() <= now)
+        {
+            result.push_back(stepExecution);
+        }
+    }
+
+    return result;
+}
+
 void InMemoryWorkflowStepExecutionStore::remove(
     const std::string& workflowExecutionId,
     const std::string& stepName,

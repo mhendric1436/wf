@@ -508,3 +508,95 @@ TEST_CASE("cancelByExecution throws for an empty execution id")
 
     REQUIRE_THROWS_AS(store.cancelByExecution(""), std::invalid_argument);
 }
+
+TEST_CASE("findExpiredRunning returns empty when no steps exist")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    REQUIRE(store.findExpiredRunning().empty());
+}
+
+TEST_CASE("findExpiredRunning returns empty when all steps are Pending or Completed")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    store.save(makeStepExecution("wfexec-001", "validateOrder", 0));
+
+    auto completed = makeStepExecution("wfexec-001", "chargePayment", 0);
+    completed.status = StepExecutionStatus::Completed;
+    store.save(completed);
+
+    REQUIRE(store.findExpiredRunning().empty());
+}
+
+TEST_CASE("findExpiredRunning returns empty when Running step lease is still valid")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    auto step = makeStepExecution();
+    step.status = StepExecutionStatus::Running;
+    step.workerId = "worker-001";
+    step.leaseExpiresAt = std::chrono::system_clock::now() + std::chrono::hours{1};
+    store.save(step);
+
+    REQUIRE(store.findExpiredRunning().empty());
+}
+
+TEST_CASE("findExpiredRunning returns expired Running step")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    auto step = makeStepExecution();
+    step.status = StepExecutionStatus::Running;
+    step.workerId = "worker-001";
+    step.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    store.save(step);
+
+    const auto expired = store.findExpiredRunning();
+
+    REQUIRE(expired.size() == 1);
+    REQUIRE(expired[0].workflowExecutionId == "wfexec-001");
+    REQUIRE(expired[0].stepName == "validateOrder");
+    REQUIRE(expired[0].status == StepExecutionStatus::Running);
+}
+
+TEST_CASE("findExpiredRunning does not return Canceled or Failed steps")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    auto canceled = makeStepExecution("wfexec-001", "validateOrder", 0);
+    canceled.status = StepExecutionStatus::Canceled;
+    canceled.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    store.save(canceled);
+
+    auto failed = makeStepExecution("wfexec-001", "chargePayment", 0);
+    failed.status = StepExecutionStatus::Failed;
+    failed.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    store.save(failed);
+
+    REQUIRE(store.findExpiredRunning().empty());
+}
+
+TEST_CASE("findExpiredRunning returns only expired steps among a mix")
+{
+    InMemoryWorkflowStepExecutionStore store;
+
+    auto expired = makeStepExecution("wfexec-001", "validateOrder", 0);
+    expired.status = StepExecutionStatus::Running;
+    expired.workerId = "worker-001";
+    expired.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    store.save(expired);
+
+    auto active = makeStepExecution("wfexec-002", "validateOrder", 0);
+    active.status = StepExecutionStatus::Running;
+    active.workerId = "worker-002";
+    active.leaseExpiresAt = std::chrono::system_clock::now() + std::chrono::hours{1};
+    store.save(active);
+
+    store.save(makeStepExecution("wfexec-003", "validateOrder", 0));
+
+    const auto result = store.findExpiredRunning();
+
+    REQUIRE(result.size() == 1);
+    REQUIRE(result[0].workflowExecutionId == "wfexec-001");
+}

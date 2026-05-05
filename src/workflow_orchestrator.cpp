@@ -495,6 +495,72 @@ WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workfl
     return canceled;
 }
 
+SweepResult WorkflowOrchestrator::sweepExpiredLeases()
+{
+    SweepResult sweepResult;
+
+    const auto expiredSteps = stepExecutionStore_.findExpiredRunning();
+
+    for (const auto& expiredStep : expiredSteps)
+    {
+        const auto execution = executionStore_.find(expiredStep.workflowExecutionId);
+
+        if (!execution.has_value())
+        {
+            continue;
+        }
+
+        if (execution->status != WorkflowExecutionStatus::Running)
+        {
+            continue;
+        }
+
+        if (execution->currentStepName != expiredStep.stepName ||
+            execution->currentStepAttempt != expiredStep.attempt)
+        {
+            continue;
+        }
+
+        const auto definition =
+            definitionStore_.find(execution->workflowName, execution->workflowVersion);
+
+        if (!definition.has_value())
+        {
+            continue;
+        }
+
+        const auto& stepDefinition = findStepDefinition(*definition, expiredStep.stepName);
+        const int maxRetries = maxRetriesForStep(stepDefinition);
+
+        WorkflowStepExecution failedStep = expiredStep;
+        failedStep.status = StepExecutionStatus::Failed;
+        failedStep.failureReason = "lease expired";
+        failedStep.leaseExpiresAt.reset();
+        stepExecutionStore_.update(failedStep);
+
+        WorkflowExecution updatedExecution = *execution;
+
+        if (updatedExecution.currentStepAttempt < maxRetries)
+        {
+            ++updatedExecution.currentStepAttempt;
+            executionStore_.update(updatedExecution);
+            stepExecutionStore_.save(makeStepExecution(
+                updatedExecution, expiredStep.stepName, updatedExecution.currentStepAttempt
+            ));
+            ++sweepResult.retriedCount;
+        }
+        else
+        {
+            updatedExecution.status = WorkflowExecutionStatus::Failed;
+            updatedExecution.failureReason = "lease expired";
+            executionStore_.update(updatedExecution);
+            ++sweepResult.failedCount;
+        }
+    }
+
+    return sweepResult;
+}
+
 std::optional<WorkflowExecution>
 WorkflowOrchestrator::getWorkflowExecution(const std::string& workflowExecutionId) const
 {

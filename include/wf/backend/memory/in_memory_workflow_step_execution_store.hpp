@@ -46,6 +46,8 @@ class InMemoryWorkflowStepExecutionStore final : public workflow::WorkflowStepEx
 
     void cancelByExecution(const std::string& workflowExecutionId) override;
 
+    std::vector<WorkflowStepExecution> findExpiredRunning() const override;
+
     void remove(
         const std::string& workflowExecutionId,
         const std::string& stepName,

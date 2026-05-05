@@ -100,4 +100,11 @@ WorkflowService::listWorkflowDefinitions(const ListWorkflowDefinitionsRequest&) 
     };
 }
 
+SweepExpiredLeasesResponse WorkflowService::sweepExpiredLeases(const SweepExpiredLeasesRequest&)
+{
+    return SweepExpiredLeasesResponse{
+        .result = orchestrator_.sweepExpiredLeases(),
+    };
+}
+
 } // namespace workflow

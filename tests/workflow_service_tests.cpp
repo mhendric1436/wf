@@ -24,6 +24,7 @@ using workflow::RegisterWorkflowDefinitionRequest;
 using workflow::StartWorkflowExecutionRequest;
 using workflow::StepCompletionContext;
 using workflow::StepExecutionStatus;
+using workflow::SweepExpiredLeasesRequest;
 using workflow::ValidateWorkflowDefinitionRequest;
 using workflow::WorkflowExecutionStatus;
 using workflow::WorkflowLogic;
@@ -827,4 +828,32 @@ TEST_CASE("service cancel throws for an empty execution id")
         context.service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = ""}),
         std::invalid_argument
     );
+}
+
+TEST_CASE("service sweep-expired-leases retries expired step and returns retriedCount 1")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    const auto executionId = context.claimInitialStep("worker-001");
+
+    auto step = context.stepExecutionStore.find(executionId, "validateOrder", 0).value();
+    step.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
+    context.stepExecutionStore.update(step);
+
+    const auto response = context.service.sweepExpiredLeases(SweepExpiredLeasesRequest{});
+
+    REQUIRE(response.result.retriedCount == 1);
+    REQUIRE(response.result.failedCount == 0);
+}
+
+TEST_CASE("service sweep-expired-leases returns {0,0} when no expired steps exist")
+{
+    TestContext context;
+    context.registerValidDefinition();
+    context.startExecution();
+
+    const auto response = context.service.sweepExpiredLeases(SweepExpiredLeasesRequest{});
+
+    REQUIRE(response.result.retriedCount == 0);
+    REQUIRE(response.result.failedCount == 0);
 }
