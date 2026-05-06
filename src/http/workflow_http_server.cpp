@@ -315,6 +315,7 @@ struct WorkflowHttpServer::Impl
 {
     WorkflowService& service;
     int port;
+    bool bound = false;
     httplib::Server svr;
 
     explicit Impl(
@@ -325,6 +326,27 @@ struct WorkflowHttpServer::Impl
           port(port)
     {
         registerRoutes();
+    }
+
+    int bind()
+    {
+        int actual;
+        if (port == 0)
+        {
+            actual = svr.bind_to_any_port("0.0.0.0");
+        }
+        else
+        {
+            actual = svr.bind_to_port("0.0.0.0", port) ? port : -1;
+        }
+
+        if (actual < 0)
+        {
+            throw std::runtime_error("failed to bind server on port " + std::to_string(port));
+        }
+
+        bound = true;
+        return actual;
     }
 
     void registerRoutes()
@@ -666,9 +688,21 @@ WorkflowHttpServer::WorkflowHttpServer(
 
 WorkflowHttpServer::~WorkflowHttpServer() = default;
 
+int WorkflowHttpServer::bind()
+{
+    return impl_->bind();
+}
+
 void WorkflowHttpServer::start()
 {
-    impl_->svr.listen("0.0.0.0", impl_->port);
+    if (impl_->bound)
+    {
+        impl_->svr.listen_after_bind();
+    }
+    else
+    {
+        impl_->svr.listen("0.0.0.0", impl_->port);
+    }
 }
 
 void WorkflowHttpServer::stop()

@@ -16,6 +16,7 @@ class WorkflowHttpServer
     );
     ~WorkflowHttpServer();
 
+    int bind();
     void start();
     void stop();
 
