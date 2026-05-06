@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 #include "wf/workflow_client.hpp"
 #include "wf/workflow_step_execution.hpp"
 
@@ -18,7 +18,7 @@ class WorkflowWorker
     // Handler receives the claimed step and returns the step output.
     // Include {"nextStep": "<name>"} in the output to route to another step.
     // Throw to fail the step.
-    using StepHandler = std::function<json::Value(const WorkflowStepExecution&)>;
+    using StepHandler = std::function<mt::Json(const WorkflowStepExecution&)>;
 
     struct Options
     {

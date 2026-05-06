@@ -1,4 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 
 #include <stdexcept>
@@ -18,8 +19,8 @@ WorkflowExecution makeExecution(const std::string& workflowExecutionId = "wfexec
     execution.workflowVersion = 1;
     execution.status = WorkflowExecutionStatus::Running;
     execution.currentStepName = "validateOrder";
-    execution.input = workflow::json::Value::object();
-    execution.state = workflow::json::Value::object();
+    execution.input = mt::Json(mt::Json::Object{});
+    execution.state = mt::Json(mt::Json::Object{});
     execution.currentStepAttempt = 0;
     return execution;
 }

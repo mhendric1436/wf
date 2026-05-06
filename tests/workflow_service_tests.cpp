@@ -1,8 +1,9 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
-#include "wf/json.hpp"
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_service.hpp"
@@ -61,7 +62,7 @@ NextStepDecision completeWorkflowDecision()
 {
     NextStepDecision decision;
     decision.workflowComplete = true;
-    decision.updatedState = workflow::json::Value::object();
+    decision.updatedState = mt::Json(mt::Json::Object{});
     return decision;
 }
 
@@ -70,7 +71,7 @@ NextStepDecision nextStepDecision(const std::string& stepName)
     NextStepDecision decision;
     decision.workflowComplete = false;
     decision.nextStepName = stepName;
-    decision.updatedState = workflow::json::Value::object();
+    decision.updatedState = mt::Json(mt::Json::Object{});
     return decision;
 }
 
@@ -122,7 +123,7 @@ struct TestContext
     {
         service.registerWorkflowDefinition(
             RegisterWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON),
+                .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse(),
             }
         );
     }
@@ -133,7 +134,7 @@ struct TestContext
             StartWorkflowExecutionRequest{
                 .workflowName = "orderProcessing",
                 .workflowVersion = 1,
-                .input = workflow::json::Value::object(),
+                .input = mt::Json(mt::Json::Object{}),
             }
         );
         return response.execution.workflowExecutionId;
@@ -167,7 +168,7 @@ TEST_CASE("service validate returns valid for well-formed definition")
 
     const auto response = context.service.validateWorkflowDefinition(
         ValidateWorkflowDefinitionRequest{
-            .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON),
+            .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse(),
         }
     );
 
@@ -179,8 +180,9 @@ TEST_CASE("service validate returns errors for missing required fields")
 {
     TestContext context;
 
-    auto json = workflow::json::Value::object();
-    json["workflowName"] = "orderProcessing";
+    mt::Json::Object jsonObj;
+    jsonObj["workflowName"] = "orderProcessing";
+    const auto json = mt::Json(std::move(jsonObj));
 
     const auto response = context.service.validateWorkflowDefinition(
         ValidateWorkflowDefinitionRequest{.definitionJson = json}
@@ -196,7 +198,7 @@ TEST_CASE("service validate returns error for non-object JSON")
 
     const auto response = context.service.validateWorkflowDefinition(
         ValidateWorkflowDefinitionRequest{
-            .definitionJson = workflow::json::parse(R"json(["not","an","object"])json"),
+            .definitionJson = mt::JsonParser(R"json(["not","an","object"])json").parse(),
         }
     );
 
@@ -210,7 +212,7 @@ TEST_CASE("service validate does not register the definition")
 
     context.service.validateWorkflowDefinition(
         ValidateWorkflowDefinitionRequest{
-            .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON),
+            .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse(),
         }
     );
 
@@ -223,7 +225,7 @@ TEST_CASE("service register stores and returns the definition")
 
     const auto response = context.service.registerWorkflowDefinition(
         RegisterWorkflowDefinitionRequest{
-            .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON),
+            .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse(),
         }
     );
 
@@ -239,8 +241,10 @@ TEST_CASE("service register replaces an existing definition")
     TestContext context;
     context.registerValidDefinition();
 
-    auto updatedJson = workflow::json::parse(VALID_WORKFLOW_JSON);
-    updatedJson["expectedExecutionTime"] = "PT20M";
+    auto parsedJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object updatedObj = parsedJson.as_object();
+    updatedObj["expectedExecutionTime"] = "PT20M";
+    mt::Json updatedJson(std::move(updatedObj));
 
     context.service.registerWorkflowDefinition(
         RegisterWorkflowDefinitionRequest{.definitionJson = updatedJson}
@@ -256,8 +260,9 @@ TEST_CASE("service register throws for invalid definition JSON")
 {
     TestContext context;
 
-    auto invalidJson = workflow::json::Value::object();
-    invalidJson["workflowName"] = "orderProcessing";
+    mt::Json::Object invalidObj;
+    invalidObj["workflowName"] = "orderProcessing";
+    const auto invalidJson = mt::Json(std::move(invalidObj));
 
     REQUIRE_THROWS_AS(
         context.service.registerWorkflowDefinition(
@@ -291,7 +296,7 @@ TEST_CASE("service start creates a running execution with the initial step pendi
         StartWorkflowExecutionRequest{
             .workflowName = "orderProcessing",
             .workflowVersion = 1,
-            .input = workflow::json::Value::object(),
+            .input = mt::Json(mt::Json::Object{}),
         }
     );
 
@@ -429,8 +434,9 @@ TEST_CASE("service complete advances execution to the next step")
     context.registerValidDefinition();
     const auto executionId = context.claimInitialStep("worker-001");
 
-    workflow::json::Value output = workflow::json::Value::object();
-    output["valid"] = true;
+    mt::Json::Object outputObj;
+    outputObj["valid"] = true;
+    const auto output = mt::Json(std::move(outputObj));
 
     const auto response = context.service.completeWorkflowStep(
         CompleteWorkflowStepRequest{
@@ -465,7 +471,7 @@ TEST_CASE("service complete marks workflow completed when logic returns complete
             .workflowExecutionId = executionId,
             .stepName = "validateOrder",
             .workerId = "worker-001",
-            .stepOutput = workflow::json::Value::object(),
+            .stepOutput = mt::Json(mt::Json::Object{}),
         }
     );
 
@@ -488,7 +494,7 @@ TEST_CASE("service complete throws for a non-owning worker")
                 .workflowExecutionId = executionId,
                 .stepName = "validateOrder",
                 .workerId = "worker-002",
-                .stepOutput = workflow::json::Value::object(),
+                .stepOutput = mt::Json(mt::Json::Object{}),
             }
         ),
         std::runtime_error
@@ -512,7 +518,7 @@ TEST_CASE("service complete throws after lease expiry")
                 .workflowExecutionId = executionId,
                 .stepName = "validateOrder",
                 .workerId = "worker-001",
-                .stepOutput = workflow::json::Value::object(),
+                .stepOutput = mt::Json(mt::Json::Object{}),
             }
         ),
         std::runtime_error
@@ -552,7 +558,7 @@ TEST_CASE("service fail marks workflow failed when max retries are exceeded")
 {
     TestContext context;
 
-    const auto noRetryJson = workflow::json::parse(R"json(
+    const auto noRetryJson = mt::JsonParser(R"json(
     {
       "workflowName": "orderProcessing",
       "workflowVersion": 1,
@@ -566,7 +572,8 @@ TEST_CASE("service fail marks workflow failed when max retries are exceeded")
         }
       ]
     }
-    )json");
+    )json")
+                                 .parse();
 
     context.service.registerWorkflowDefinition(
         RegisterWorkflowDefinitionRequest{.definitionJson = noRetryJson}
@@ -650,7 +657,7 @@ TEST_CASE("service get-workflow-execution reflects status after workflow complet
             .workflowExecutionId = executionId,
             .stepName = "validateOrder",
             .workerId = "worker-001",
-            .stepOutput = workflow::json::Value::object(),
+            .stepOutput = mt::Json(mt::Json::Object{}),
         }
     );
 
@@ -689,11 +696,11 @@ TEST_CASE("service list-workflow-definitions returns all registered definitions 
 
     context.service.registerWorkflowDefinition(
         RegisterWorkflowDefinitionRequest{
-            .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON),
+            .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse(),
         }
     );
 
-    const auto secondJson = workflow::json::parse(R"json(
+    const auto secondJson = mt::JsonParser(R"json(
     {
       "workflowName": "invoiceProcessing",
       "workflowVersion": 1,
@@ -707,7 +714,8 @@ TEST_CASE("service list-workflow-definitions returns all registered definitions 
         }
       ]
     }
-    )json");
+    )json")
+                                .parse();
 
     context.service.registerWorkflowDefinition(
         RegisterWorkflowDefinitionRequest{.definitionJson = secondJson}
@@ -795,7 +803,7 @@ TEST_CASE("service cancel throws when execution is already completed")
             .workflowExecutionId = executionId,
             .stepName = "validateOrder",
             .workerId = "worker-001",
-            .stepOutput = workflow::json::Value::object(),
+            .stepOutput = mt::Json(mt::Json::Object{}),
         }
     );
 

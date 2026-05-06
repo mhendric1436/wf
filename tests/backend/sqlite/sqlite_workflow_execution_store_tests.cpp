@@ -1,4 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
 #include "wf/backend/sqlite/sqlite_database.hpp"
 #include "wf/backend/sqlite/sqlite_workflow_execution_store.hpp"
 
@@ -22,8 +23,8 @@ WorkflowExecution makeExecution(const std::string& id = "wfexec-001")
     exec.status = WorkflowExecutionStatus::Running;
     exec.currentStepName = "validateOrder";
     exec.currentStepAttempt = 0;
-    exec.input = workflow::json::Value::object();
-    exec.state = workflow::json::Value::object();
+    exec.input = mt::Json(mt::Json::Object{});
+    exec.state = mt::Json(mt::Json::Object{});
     return exec;
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 #include "wf/store/workflow_definition_store.hpp"
 #include "wf/workflow_definition.hpp"
 #include "wf/workflow_execution.hpp"
@@ -40,25 +40,25 @@ StepExecutionStatus stepStatusFromString(const std::string& s);
 
 // Domain type serialization
 
-json::Value toJson(const WorkflowStep& step);
-json::Value toJson(const WorkflowDefinition& def);
-json::Value toJson(const WorkflowDefinitionKey& key);
-json::Value toJson(const WorkflowExecution& exec);
-json::Value toJson(const WorkflowStepExecution& step);
-json::Value toJson(const ValidationResult& result);
+mt::Json toJson(const WorkflowStep& step);
+mt::Json toJson(const WorkflowDefinition& def);
+mt::Json toJson(const WorkflowDefinitionKey& key);
+mt::Json toJson(const WorkflowExecution& exec);
+mt::Json toJson(const WorkflowStepExecution& step);
+mt::Json toJson(const ValidationResult& result);
 
 // Domain type deserialization
 
-WorkflowDefinitionKey workflowDefinitionKeyFromJson(const json::Value& v);
-WorkflowExecution workflowExecutionFromJson(const json::Value& v);
-WorkflowStepExecution workflowStepExecutionFromJson(const json::Value& v);
-ValidationResult validationResultFromJson(const json::Value& v);
+WorkflowDefinitionKey workflowDefinitionKeyFromJson(const mt::Json& v);
+WorkflowExecution workflowExecutionFromJson(const mt::Json& v);
+WorkflowStepExecution workflowStepExecutionFromJson(const mt::Json& v);
+ValidationResult validationResultFromJson(const mt::Json& v);
 
 // Workflow definition parsing and validation
 
-ValidationResult validateWorkflowJson(const json::Value& value);
+ValidationResult validateWorkflowJson(const mt::Json& value);
 
-WorkflowDefinition parseWorkflowDefinition(const json::Value& value);
+WorkflowDefinition parseWorkflowDefinition(const mt::Json& value);
 
 WorkflowDefinition parseWorkflowDefinitionText(const std::string& jsonText);
 

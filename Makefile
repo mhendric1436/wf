@@ -1,6 +1,7 @@
 CXX := clang++
 CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -Werror -O2 -g
-CPPFLAGS := -Iinclude -Ithird_party
+MT_INCLUDE := $(HOME)/repos/mt/include
+CPPFLAGS   := -Iinclude -Ithird_party -I$(MT_INCLUDE)
 
 FORMAT := clang-format
 PLANTUML ?= plantuml

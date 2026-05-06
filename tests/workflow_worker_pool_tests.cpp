@@ -1,8 +1,9 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
-#include "wf/json.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/in_process_transport.hpp"
 #include "wf/workflow_client.hpp"
@@ -32,7 +33,6 @@ using workflow::WorkflowWorkerPool;
 using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
 using workflow::backend::memory::InMemoryWorkflowExecutionStore;
 using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
-using workflow::json::Value;
 using workflow::logic::StepOutputRoutingLogic;
 using workflow::transport::InProcessTransport;
 
@@ -100,12 +100,12 @@ struct PoolTestContext
     {
         client.registerWorkflowDefinition(
             RegisterWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(ORDER_WORKFLOW_JSON)
+                .definitionJson = mt::JsonParser(ORDER_WORKFLOW_JSON).parse()
             }
         );
         client.registerWorkflowDefinition(
             RegisterWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(FULFILL_WORKFLOW_JSON)
+                .definitionJson = mt::JsonParser(FULFILL_WORKFLOW_JSON).parse()
             }
         );
     }
@@ -155,16 +155,16 @@ struct PoolTestContext
     }
 };
 
-Value nextStep(const std::string& name)
+mt::Json nextStep(const std::string& name)
 {
-    Value::Object out;
+    mt::Json::Object out;
     out["nextStep"] = name;
-    return Value(std::move(out));
+    return mt::Json(std::move(out));
 }
 
-Value completeOutput()
+mt::Json completeOutput()
 {
-    return Value::object();
+    return mt::Json(mt::Json::Object{});
 }
 
 } // namespace
@@ -277,7 +277,7 @@ TEST_CASE("WorkflowWorkerPool tracks concurrency: active steps never exceed thre
     );
     pool.registerStep(
         "shipOrder",
-        [&](const WorkflowStepExecution&) -> Value
+        [&](const WorkflowStepExecution&) -> mt::Json
         {
             const int current = ++activeSteps;
             int expected = maxObservedActive.load();
@@ -310,7 +310,7 @@ TEST_CASE("WorkflowWorkerPool fails step when handler throws; pool keeps running
     WorkflowWorkerPool pool(ctx.client, ctx.allDefinitions(), "pool-001", fastPoolOptions());
     pool.registerStep(
         "shipOrder",
-        [](const WorkflowStepExecution&) -> Value { throw std::runtime_error("ship failed"); }
+        [](const WorkflowStepExecution&) -> mt::Json { throw std::runtime_error("ship failed"); }
     );
     pool.registerStep(
         "validateOrder", [](const WorkflowStepExecution&) { return completeOutput(); }
@@ -415,7 +415,7 @@ TEST_CASE("WorkflowWorkerPool threads step output as input to the next step")
     PoolTestContext ctx;
     const auto id = ctx.startOrder();
 
-    Value capturedInput = Value::object();
+    mt::Json capturedInput = mt::Json(mt::Json::Object{});
 
     WorkflowWorkerPool pool(
         ctx.client,
@@ -424,18 +424,18 @@ TEST_CASE("WorkflowWorkerPool threads step output as input to the next step")
     );
     pool.registerStep(
         "validateOrder",
-        [](const WorkflowStepExecution&) -> Value
+        [](const WorkflowStepExecution&) -> mt::Json
         {
-            Value::Object out;
-            out["nextStep"] = "chargePayment";
-            out["orderId"] = "order-42";
-            out["amount"] = 99;
-            return Value(std::move(out));
+            mt::Json::Object out;
+            out["nextStep"] = std::string("chargePayment");
+            out["orderId"] = std::string("order-42");
+            out["amount"] = int64_t(99);
+            return mt::Json(std::move(out));
         }
     );
     pool.registerStep(
         "chargePayment",
-        [&](const WorkflowStepExecution& step) -> Value
+        [&](const WorkflowStepExecution& step) -> mt::Json
         {
             capturedInput = step.input;
             return completeOutput();
@@ -447,11 +447,11 @@ TEST_CASE("WorkflowWorkerPool threads step output as input to the next step")
     pool.stop();
 
     REQUIRE(exec.status == WorkflowExecutionStatus::Completed);
-    REQUIRE(capturedInput.contains("orderId"));
-    REQUIRE(capturedInput.at("orderId").asString() == "order-42");
-    REQUIRE(capturedInput.contains("amount"));
-    REQUIRE(capturedInput.at("amount").asInt() == 99);
-    REQUIRE(!capturedInput.contains("nextStep"));
+    REQUIRE((capturedInput.is_object() && capturedInput.as_object().count("orderId")));
+    REQUIRE(capturedInput.at("orderId").as_string() == "order-42");
+    REQUIRE((capturedInput.is_object() && capturedInput.as_object().count("amount")));
+    REQUIRE(static_cast<int>(capturedInput.at("amount").as_int64()) == 99);
+    REQUIRE(!(capturedInput.is_object() && capturedInput.as_object().count("nextStep")));
 }
 
 TEST_CASE("WorkflowWorkerPool with single poller handles multiple definitions")

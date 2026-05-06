@@ -1,9 +1,10 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
-#include "wf/json.hpp"
 #include "wf/transport/http_transport.hpp"
 #include "wf/workflow_client.hpp"
 #include "wf/workflow_logic.hpp"
@@ -67,7 +68,7 @@ NextStepDecision completeWorkflowDecision()
 {
     NextStepDecision decision;
     decision.workflowComplete = true;
-    decision.updatedState = workflow::json::Value::object();
+    decision.updatedState = mt::Json(mt::Json::Object{});
     return decision;
 }
 
@@ -76,7 +77,7 @@ NextStepDecision nextStepDecision(const std::string& stepName)
     NextStepDecision decision;
     decision.workflowComplete = false;
     decision.nextStepName = stepName;
-    decision.updatedState = workflow::json::Value::object();
+    decision.updatedState = mt::Json(mt::Json::Object{});
     return decision;
 }
 
@@ -149,7 +150,7 @@ struct HttpTransportTestContext
     {
         client.registerWorkflowDefinition(
             RegisterWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON)
+                .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse()
             }
         );
     }
@@ -173,7 +174,7 @@ TEST_CASE("HttpTransport validate workflow definition")
     {
         auto res = ctx.client.validateWorkflowDefinition(
             ValidateWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(VALID_WORKFLOW_JSON)
+                .definitionJson = mt::JsonParser(VALID_WORKFLOW_JSON).parse()
             }
         );
         REQUIRE(res.validation.valid);
@@ -183,7 +184,7 @@ TEST_CASE("HttpTransport validate workflow definition")
     SECTION("invalid definition returns errors")
     {
         auto res = ctx.client.validateWorkflowDefinition(
-            ValidateWorkflowDefinitionRequest{.definitionJson = workflow::json::Value::object()}
+            ValidateWorkflowDefinitionRequest{.definitionJson = mt::Json(mt::Json::Object{})}
         );
         REQUIRE_FALSE(res.validation.valid);
         REQUIRE_FALSE(res.validation.errors.empty());

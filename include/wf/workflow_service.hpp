@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 #include "wf/workflow_definition.hpp"
 #include "wf/workflow_json.hpp"
 #include "wf/workflow_orchestrator.hpp"
@@ -21,7 +21,7 @@ namespace workflow
 
 struct RegisterWorkflowDefinitionRequest
 {
-    json::Value definitionJson;
+    mt::Json definitionJson;
 };
 
 struct RegisterWorkflowDefinitionResponse
@@ -31,7 +31,7 @@ struct RegisterWorkflowDefinitionResponse
 
 struct ValidateWorkflowDefinitionRequest
 {
-    json::Value definitionJson;
+    mt::Json definitionJson;
 };
 
 struct ValidateWorkflowDefinitionResponse
@@ -43,7 +43,7 @@ struct StartWorkflowExecutionRequest
 {
     std::string workflowName;
     int workflowVersion = 0;
-    json::Value input = json::Value::object();
+    mt::Json input = mt::Json(mt::Json::Object{});
 };
 
 struct StartWorkflowExecutionResponse
@@ -81,7 +81,7 @@ struct CompleteWorkflowStepRequest
     std::string workflowExecutionId;
     std::string stepName;
     std::string workerId;
-    json::Value stepOutput = json::Value::object();
+    mt::Json stepOutput = mt::Json(mt::Json::Object{});
 };
 
 struct CompleteWorkflowStepResponse

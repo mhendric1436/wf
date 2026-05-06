@@ -1,10 +1,11 @@
 #include "catch2/catch_amalgamated.hpp"
 #include "httplib/httplib.h"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
-#include "wf/json.hpp"
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_service.hpp"
@@ -53,7 +54,7 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
         {
             NextStepDecision d;
             d.workflowComplete = true;
-            d.updatedState = workflow::json::Value::object();
+            d.updatedState = mt::Json(mt::Json::Object{});
             return d;
         }
         return decisions_.at(nextIndex_++);
@@ -116,7 +117,11 @@ struct HttpTestContext
             "/v1/workflow-executions",
             R"json({"workflowName":"orderProcessing","workflowVersion":1})json", "application/json"
         );
-        return workflow::json::parse(res->body)["execution"]["workflowExecutionId"].asString();
+        return mt::JsonParser(res->body)
+            .parse()
+            .at("execution")
+            .at("workflowExecutionId")
+            .as_string();
     }
 
     std::string claimStep(const std::string& workerId = "worker-001")
@@ -126,8 +131,8 @@ struct HttpTestContext
             R"json({"workflowName":"orderProcessing","workflowVersion":1,"workerId":"worker-001","maxResults":1})json",
             "application/json"
         );
-        const auto body = workflow::json::parse(res->body);
-        return body["steps"][0]["workflowExecutionId"].asString();
+        const auto body = mt::JsonParser(res->body).parse();
+        return body.at("steps").as_array().at(0).at("workflowExecutionId").as_string();
         (void)workerId;
     }
 };
@@ -147,9 +152,9 @@ TEST_CASE("http server validate returns valid result for a valid definition")
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["validation"]["valid"].asBool() == true);
-    REQUIRE(body["validation"]["errors"].asArray().empty());
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("validation").at("valid").as_bool() == true);
+    REQUIRE(body.at("validation").at("errors").as_array().empty());
 }
 
 TEST_CASE("http server validate returns errors for an invalid definition")
@@ -161,9 +166,9 @@ TEST_CASE("http server validate returns errors for an invalid definition")
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["validation"]["valid"].asBool() == false);
-    REQUIRE_FALSE(body["validation"]["errors"].asArray().empty());
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("validation").at("valid").as_bool() == false);
+    REQUIRE_FALSE(body.at("validation").at("errors").as_array().empty());
 }
 
 TEST_CASE("http server validate returns 400 for malformed JSON")
@@ -174,8 +179,8 @@ TEST_CASE("http server validate returns 400 for malformed JSON")
         ctx.client.Post("/v1/workflow-definitions/validate", "not json", "application/json");
 
     REQUIRE(res->status == 400);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "invalid-argument");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "invalid-argument");
 }
 
 // -----------------------------------------------------------------------------
@@ -190,10 +195,10 @@ TEST_CASE("http server register returns 201 with the registered definition")
         ctx.client.Post("/v1/workflow-definitions", VALID_WORKFLOW_JSON, "application/json");
 
     REQUIRE(res->status == 201);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["definition"]["workflowName"].asString() == "orderProcessing");
-    REQUIRE(body["definition"]["workflowVersion"].asInt() == 1);
-    REQUIRE(body["definition"]["steps"].asArray().size() == 2);
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("definition").at("workflowName").as_string() == "orderProcessing");
+    REQUIRE(static_cast<int>(body.at("definition").at("workflowVersion").as_int64()) == 1);
+    REQUIRE(body.at("definition").at("steps").as_array().size() == 2);
 }
 
 TEST_CASE("http server register returns 400 for an invalid definition")
@@ -205,8 +210,8 @@ TEST_CASE("http server register returns 400 for an invalid definition")
     );
 
     REQUIRE(res->status == 400);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "invalid-argument");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "invalid-argument");
 }
 
 // -----------------------------------------------------------------------------
@@ -220,8 +225,8 @@ TEST_CASE("http server list returns empty array before any definitions are regis
     const auto res = ctx.client.Get("/v1/workflow-definitions");
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["definitions"].asArray().empty());
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("definitions").as_array().empty());
 }
 
 TEST_CASE("http server list returns registered definitions")
@@ -232,10 +237,16 @@ TEST_CASE("http server list returns registered definitions")
     const auto res = ctx.client.Get("/v1/workflow-definitions");
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["definitions"].asArray().size() == 1);
-    REQUIRE(body["definitions"][0]["workflowName"].asString() == "orderProcessing");
-    REQUIRE(body["definitions"][0]["workflowVersion"].asInt() == 1);
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("definitions").as_array().size() == 1);
+    REQUIRE(
+        body.at("definitions").as_array().at(0).at("workflowName").as_string() == "orderProcessing"
+    );
+    REQUIRE(
+        static_cast<int>(
+            body.at("definitions").as_array().at(0).at("workflowVersion").as_int64()
+        ) == 1
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -253,10 +264,10 @@ TEST_CASE("http server start returns 201 with the new execution")
     );
 
     REQUIRE(res->status == 201);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE_FALSE(body["execution"]["workflowExecutionId"].asString().empty());
-    REQUIRE(body["execution"]["status"].asString() == "Running");
-    REQUIRE(body["execution"]["currentStepName"].asString() == "validateOrder");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE_FALSE(body.at("execution").at("workflowExecutionId").as_string().empty());
+    REQUIRE(body.at("execution").at("status").as_string() == "Running");
+    REQUIRE(body.at("execution").at("currentStepName").as_string() == "validateOrder");
 }
 
 TEST_CASE("http server start returns 404 when the definition is not registered")
@@ -269,8 +280,8 @@ TEST_CASE("http server start returns 404 when the definition is not registered")
     );
 
     REQUIRE(res->status == 404);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "not-found");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "not-found");
 }
 
 TEST_CASE("http server start returns 400 for missing required fields")
@@ -281,8 +292,8 @@ TEST_CASE("http server start returns 400 for missing required fields")
         ctx.client.Post("/v1/workflow-executions", R"json({})json", "application/json");
 
     REQUIRE(res->status == 400);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "invalid-argument");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "invalid-argument");
 }
 
 // -----------------------------------------------------------------------------
@@ -298,9 +309,9 @@ TEST_CASE("http server get returns the execution")
     const auto res = ctx.client.Get("/v1/workflow-executions/" + id);
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["execution"]["workflowExecutionId"].asString() == id);
-    REQUIRE(body["execution"]["status"].asString() == "Running");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("execution").at("workflowExecutionId").as_string() == id);
+    REQUIRE(body.at("execution").at("status").as_string() == "Running");
 }
 
 TEST_CASE("http server get returns 404 for an unknown execution id")
@@ -310,8 +321,8 @@ TEST_CASE("http server get returns 404 for an unknown execution id")
     const auto res = ctx.client.Get("/v1/workflow-executions/no-such-id");
 
     REQUIRE(res->status == 404);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "not-found");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "not-found");
 }
 
 // -----------------------------------------------------------------------------
@@ -327,8 +338,8 @@ TEST_CASE("http server cancel returns the canceled execution")
     const auto res = ctx.client.Delete("/v1/workflow-executions/" + id);
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["execution"]["status"].asString() == "Canceled");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("execution").at("status").as_string() == "Canceled");
 }
 
 TEST_CASE("http server cancel returns 404 for an unknown execution id")
@@ -338,8 +349,8 @@ TEST_CASE("http server cancel returns 404 for an unknown execution id")
     const auto res = ctx.client.Delete("/v1/workflow-executions/no-such-id");
 
     REQUIRE(res->status == 404);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "not-found");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "not-found");
 }
 
 TEST_CASE("http server cancel returns 409 when execution is not running")
@@ -352,8 +363,8 @@ TEST_CASE("http server cancel returns 409 when execution is not running")
     const auto res = ctx.client.Delete("/v1/workflow-executions/" + id);
 
     REQUIRE(res->status == 409);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "conflict");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "conflict");
 }
 
 // -----------------------------------------------------------------------------
@@ -373,11 +384,11 @@ TEST_CASE("http server poll-and-claim returns a claimed step")
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["steps"].asArray().size() == 1);
-    REQUIRE(body["steps"][0]["status"].asString() == "Running");
-    REQUIRE(body["steps"][0]["workerId"].asString() == "worker-001");
-    REQUIRE_FALSE(body["steps"][0]["leaseExpiresAt"].isNull());
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("steps").as_array().size() == 1);
+    REQUIRE(body.at("steps").as_array().at(0).at("status").as_string() == "Running");
+    REQUIRE(body.at("steps").as_array().at(0).at("workerId").as_string() == "worker-001");
+    REQUIRE_FALSE(body.at("steps").as_array().at(0).at("leaseExpiresAt").is_null());
 }
 
 TEST_CASE("http server poll-and-claim returns empty array when no steps are pending")
@@ -392,8 +403,8 @@ TEST_CASE("http server poll-and-claim returns empty array when no steps are pend
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["steps"].asArray().empty());
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("steps").as_array().empty());
 }
 
 TEST_CASE("http server poll-and-claim returns 400 for missing required fields")
@@ -426,9 +437,9 @@ TEST_CASE("http server keep-alive extends the lease")
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["step"]["status"].asString() == "Running");
-    REQUIRE_FALSE(body["step"]["leaseExpiresAt"].isNull());
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("step").at("status").as_string() == "Running");
+    REQUIRE_FALSE(body.at("step").at("leaseExpiresAt").is_null());
 }
 
 TEST_CASE("http server keep-alive returns 409 for a non-owning worker")
@@ -446,8 +457,8 @@ TEST_CASE("http server keep-alive returns 409 for a non-owning worker")
     );
 
     REQUIRE(res->status == 409);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "conflict");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "conflict");
 }
 
 // -----------------------------------------------------------------------------
@@ -471,9 +482,9 @@ TEST_CASE("http server complete transitions the execution to the next step")
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["execution"]["status"].asString() == "Running");
-    REQUIRE(body["execution"]["currentStepName"].asString() == "chargePayment");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("execution").at("status").as_string() == "Running");
+    REQUIRE(body.at("execution").at("currentStepName").as_string() == "chargePayment");
 }
 
 TEST_CASE("http server complete returns 409 for a non-owning worker")
@@ -491,8 +502,8 @@ TEST_CASE("http server complete returns 409 for a non-owning worker")
     );
 
     REQUIRE(res->status == 409);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "conflict");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "conflict");
 }
 
 // -----------------------------------------------------------------------------
@@ -514,8 +525,8 @@ TEST_CASE("http server fail retries when attempts remain")
     );
 
     REQUIRE(res->status == 200);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["execution"]["status"].asString() == "Running");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("execution").at("status").as_string() == "Running");
 }
 
 TEST_CASE("http server fail returns 409 for a non-owning worker")
@@ -533,8 +544,8 @@ TEST_CASE("http server fail returns 409 for a non-owning worker")
     );
 
     REQUIRE(res->status == 409);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "conflict");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "conflict");
 }
 
 TEST_CASE("http server fail returns 400 for a missing reason field")
@@ -552,8 +563,8 @@ TEST_CASE("http server fail returns 400 for a missing reason field")
     );
 
     REQUIRE(res->status == 400);
-    const auto body = workflow::json::parse(res->body);
-    REQUIRE(body["type"].asString() == "invalid-argument");
+    const auto body = mt::JsonParser(res->body).parse();
+    REQUIRE(body.at("type").as_string() == "invalid-argument");
 }
 
 // -----------------------------------------------------------------------------

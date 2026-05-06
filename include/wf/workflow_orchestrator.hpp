@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 #include "wf/store/workflow_definition_store.hpp"
 #include "wf/store/workflow_execution_store.hpp"
 #include "wf/store/workflow_step_execution_store.hpp"
@@ -38,7 +38,7 @@ class WorkflowOrchestrator
     WorkflowExecution startWorkflow(
         const std::string& workflowName,
         int workflowVersion,
-        const json::Value& input
+        const mt::Json& input
     );
 
     std::vector<WorkflowStepExecution> pollAndClaimWorkflowSteps(
@@ -58,7 +58,7 @@ class WorkflowOrchestrator
         const std::string& workflowExecutionId,
         const std::string& stepName,
         const std::string& workerId,
-        const json::Value& stepOutput
+        const mt::Json& stepOutput
     );
 
     WorkflowExecution failStep(

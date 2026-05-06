@@ -1,5 +1,7 @@
 #include "catch2/catch_amalgamated.hpp"
-#include "wf/json.hpp"
+#include "mt/errors.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/workflow_json.hpp"
 
 #include <stdexcept>
@@ -8,7 +10,6 @@
 using workflow::parseWorkflowDefinition;
 using workflow::parseWorkflowDefinitionText;
 using workflow::validateWorkflowJson;
-using workflow::json::parse;
 
 namespace
 {
@@ -43,33 +44,34 @@ const char* VALID_WORKFLOW_JSON = R"json(
 
 TEST_CASE("custom JSON parser parses object fields")
 {
-    const auto value = parse(R"json({"name":"workflow","version":1,"enabled":true})json");
+    const auto value =
+        mt::JsonParser(R"json({"name":"workflow","version":1,"enabled":true})json").parse();
 
-    REQUIRE(value.isObject());
-    REQUIRE(value.at("name").asString() == "workflow");
-    REQUIRE(value.at("version").asInt() == 1);
-    REQUIRE(value.at("enabled").asBool());
+    REQUIRE(value.is_object());
+    REQUIRE(value.at("name").as_string() == "workflow");
+    REQUIRE(static_cast<int>(value.at("version").as_int64()) == 1);
+    REQUIRE(value.at("enabled").as_bool());
 }
 
 TEST_CASE("custom JSON parser parses arrays")
 {
-    const auto value = parse(R"json(["a","b","c"])json");
+    const auto value = mt::JsonParser(R"json(["a","b","c"])json").parse();
 
-    REQUIRE(value.isArray());
-    REQUIRE(value.asArray().size() == 3);
-    REQUIRE(value[0].asString() == "a");
-    REQUIRE(value[1].asString() == "b");
-    REQUIRE(value[2].asString() == "c");
+    REQUIRE(value.is_array());
+    REQUIRE(value.as_array().size() == 3);
+    REQUIRE(value.as_array().at(0).as_string() == "a");
+    REQUIRE(value.as_array().at(1).as_string() == "b");
+    REQUIRE(value.as_array().at(2).as_string() == "c");
 }
 
 TEST_CASE("custom JSON parser rejects invalid JSON")
 {
-    REQUIRE_THROWS_AS(parse(R"json({"name": )json"), workflow::json::JsonParseError);
+    REQUIRE_THROWS_AS(mt::JsonParser(R"json({"name": )json").parse(), mt::BackendError);
 }
 
 TEST_CASE("valid workflow JSON passes validation")
 {
-    const auto value = parse(VALID_WORKFLOW_JSON);
+    const auto value = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
 
     const auto result = validateWorkflowJson(value);
 
@@ -105,8 +107,10 @@ TEST_CASE("valid workflow JSON parses into workflow definition")
 
 TEST_CASE("workflow name is required")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value.erase("workflowName");
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj.erase("workflowName");
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -116,8 +120,10 @@ TEST_CASE("workflow name is required")
 
 TEST_CASE("workflow version must be greater than or equal to 1")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["workflowVersion"] = 0;
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["workflowVersion"] = 0;
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -126,8 +132,10 @@ TEST_CASE("workflow version must be greater than or equal to 1")
 
 TEST_CASE("top-level expected execution time is required")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value.erase("expectedExecutionTime");
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj.erase("expectedExecutionTime");
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -136,8 +144,10 @@ TEST_CASE("top-level expected execution time is required")
 
 TEST_CASE("top-level expected execution time must be ISO-8601 duration")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["expectedExecutionTime"] = "10 minutes";
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["expectedExecutionTime"] = "10 minutes";
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -146,8 +156,10 @@ TEST_CASE("top-level expected execution time must be ISO-8601 duration")
 
 TEST_CASE("steps must contain at least one step")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["steps"] = workflow::json::Value::array();
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["steps"] = mt::Json(mt::Json::Array{});
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -156,8 +168,14 @@ TEST_CASE("steps must contain at least one step")
 
 TEST_CASE("step name is required")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["steps"][0].erase("name");
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    mt::Json::Array steps = obj.at("steps").as_array();
+    mt::Json::Object step0 = steps.at(0).as_object();
+    step0.erase("name");
+    steps[0] = mt::Json(std::move(step0));
+    obj["steps"] = mt::Json(std::move(steps));
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -166,8 +184,14 @@ TEST_CASE("step name is required")
 
 TEST_CASE("step names must be unique")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["steps"][1]["name"] = "validateOrder";
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    mt::Json::Array steps = obj.at("steps").as_array();
+    mt::Json::Object step1 = steps.at(1).as_object();
+    step1["name"] = "validateOrder";
+    steps[1] = mt::Json(std::move(step1));
+    obj["steps"] = mt::Json(std::move(steps));
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -176,8 +200,10 @@ TEST_CASE("step names must be unique")
 
 TEST_CASE("start workflow step name must exist in steps")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["startWorkflowStepName"] = "missingStep";
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["startWorkflowStepName"] = "missingStep";
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -186,8 +212,14 @@ TEST_CASE("start workflow step name must exist in steps")
 
 TEST_CASE("step maxRetries must be non-negative")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["steps"][0]["maxRetries"] = -1;
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    mt::Json::Array steps = obj.at("steps").as_array();
+    mt::Json::Object step0 = steps.at(0).as_object();
+    step0["maxRetries"] = -1;
+    steps[0] = mt::Json(std::move(step0));
+    obj["steps"] = mt::Json(std::move(steps));
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -196,8 +228,14 @@ TEST_CASE("step maxRetries must be non-negative")
 
 TEST_CASE("step expected execution time must be ISO-8601 duration")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["steps"][0]["expectedExecutionTime"] = "30 seconds";
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    mt::Json::Array steps = obj.at("steps").as_array();
+    mt::Json::Object step0 = steps.at(0).as_object();
+    step0["expectedExecutionTime"] = "30 seconds";
+    steps[0] = mt::Json(std::move(step0));
+    obj["steps"] = mt::Json(std::move(steps));
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -206,19 +244,27 @@ TEST_CASE("step expected execution time must be ISO-8601 duration")
 
 TEST_CASE("additional step fields are preserved")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["steps"][0]["customField"] = "customValue";
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    mt::Json::Array steps = obj.at("steps").as_array();
+    mt::Json::Object step0 = steps.at(0).as_object();
+    step0["customField"] = "customValue";
+    steps[0] = mt::Json(std::move(step0));
+    obj["steps"] = mt::Json(std::move(steps));
+    auto value = mt::Json(std::move(obj));
 
     const auto workflow = parseWorkflowDefinition(value);
 
     REQUIRE(workflow.steps[0].additionalFields.contains("customField"));
-    REQUIRE(workflow.steps[0].additionalFields.at("customField").asString() == "customValue");
+    REQUIRE(workflow.steps[0].additionalFields.at("customField").as_string() == "customValue");
 }
 
 TEST_CASE("additional top-level fields are rejected")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["customTopLevelField"] = "not allowed";
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["customTopLevelField"] = "not allowed";
+    auto value = mt::Json(std::move(obj));
 
     const auto result = validateWorkflowJson(value);
 
@@ -227,8 +273,10 @@ TEST_CASE("additional top-level fields are rejected")
 
 TEST_CASE("parser throws on invalid workflow")
 {
-    auto value = parse(VALID_WORKFLOW_JSON);
-    value["workflowVersion"] = 0;
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["workflowVersion"] = 0;
+    auto value = mt::Json(std::move(obj));
 
     REQUIRE_THROWS_AS(parseWorkflowDefinition(value), std::invalid_argument);
 }

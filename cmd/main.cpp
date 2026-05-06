@@ -1,9 +1,11 @@
+#include "mt/errors.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/sqlite/sqlite_database.hpp"
 #include "wf/backend/sqlite/sqlite_workflow_definition_store.hpp"
 #include "wf/backend/sqlite/sqlite_workflow_execution_store.hpp"
 #include "wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
-#include "wf/json.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/http_transport.hpp"
 #include "wf/workflow_client.hpp"
@@ -111,13 +113,13 @@ int cmdValidate(const std::string& path)
         return 1;
     }
 
-    workflow::json::Value json;
+    mt::Json json;
 
     try
     {
-        json = workflow::json::parse(text);
+        json = mt::JsonParser(text).parse();
     }
-    catch (const workflow::json::JsonParseError& e)
+    catch (const mt::BackendError& e)
     {
         std::cerr << "invalid: JSON parse error: " << e.what() << "\n";
         return 1;
@@ -243,7 +245,7 @@ int cmdRegister(
         auto client = makeClient(server);
         const auto response = client.registerWorkflowDefinition(
             workflow::RegisterWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(text)
+                .definitionJson = mt::JsonParser(text).parse()
             }
         );
 
@@ -358,7 +360,7 @@ int cmdStart(
         workflow::StartWorkflowExecutionRequest request;
         request.workflowName = name;
         request.workflowVersion = version;
-        request.input = workflow::json::parse(inputJson);
+        request.input = mt::JsonParser(inputJson).parse();
 
         const auto response = client.startWorkflowExecution(request);
         printExecution(response.execution);

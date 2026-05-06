@@ -5,14 +5,16 @@ namespace workflow::logic
 
 NextStepDecision StepOutputRoutingLogic::decideNextStep(const StepCompletionContext& context)
 {
-    if (context.stepOutput.contains("nextStep") && context.stepOutput.at("nextStep").isString() &&
-        !context.stepOutput.at("nextStep").asString().empty())
+    if (context.stepOutput.is_object() && context.stepOutput.as_object().count("nextStep") &&
+        context.stepOutput.at("nextStep").is_string() &&
+        !context.stepOutput.at("nextStep").as_string().empty())
     {
-        json::Value nextInput = context.stepOutput;
-        nextInput.erase("nextStep");
+        mt::Json::Object _obj = context.stepOutput.as_object();
+        _obj.erase("nextStep");
+        mt::Json nextInput(std::move(_obj));
         return NextStepDecision{
             .workflowComplete = false,
-            .nextStepName = context.stepOutput.at("nextStep").asString(),
+            .nextStepName = context.stepOutput.at("nextStep").as_string(),
             .nextStepInput = std::move(nextInput),
         };
     }

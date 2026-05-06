@@ -1,7 +1,8 @@
 #include "wf/backend/sqlite/sqlite_workflow_definition_store.hpp"
 
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "sqlite_helpers.hpp"
-#include "wf/json.hpp"
 
 #include <stdexcept>
 
@@ -29,11 +30,11 @@ void validateKey(
 
 std::string stepsToJson(const std::vector<WorkflowStep>& steps)
 {
-    json::Value::Array arr;
+    mt::Json::Array arr;
 
     for (const auto& step : steps)
     {
-        json::Value::Object obj;
+        mt::Json::Object obj;
         obj["name"] = step.name;
 
         if (step.expectedExecutionTime.has_value())
@@ -51,33 +52,33 @@ std::string stepsToJson(const std::vector<WorkflowStep>& steps)
             obj[k] = v;
         }
 
-        arr.push_back(json::Value(std::move(obj)));
+        arr.push_back(mt::Json(std::move(obj)));
     }
 
-    return json::stringify(json::Value(std::move(arr)));
+    return mt::Json(std::move(arr)).canonical_string();
 }
 
 std::vector<WorkflowStep> stepsFromJson(const std::string& text)
 {
-    const auto arr = json::parse(text);
+    const auto arr = mt::JsonParser(text).parse();
     std::vector<WorkflowStep> steps;
 
-    for (const auto& item : arr.asArray())
+    for (const auto& item : arr.as_array())
     {
         WorkflowStep step;
-        step.name = item["name"].asString();
+        step.name = item["name"].as_string();
 
-        if (item.contains("expectedExecutionTime"))
+        if (item.is_object() && item.as_object().count("expectedExecutionTime"))
         {
-            step.expectedExecutionTime = item["expectedExecutionTime"].asString();
+            step.expectedExecutionTime = item["expectedExecutionTime"].as_string();
         }
 
-        if (item.contains("maxRetries"))
+        if (item.is_object() && item.as_object().count("maxRetries"))
         {
-            step.maxRetries = item["maxRetries"].asInt();
+            step.maxRetries = static_cast<int>(item["maxRetries"].as_int64());
         }
 
-        for (const auto& [k, v] : item.asObject())
+        for (const auto& [k, v] : item.as_object())
         {
             if (k != "name" && k != "expectedExecutionTime" && k != "maxRetries")
             {

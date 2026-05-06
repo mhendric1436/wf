@@ -1,7 +1,8 @@
 #include "wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp"
 
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "sqlite_helpers.hpp"
-#include "wf/json.hpp"
 
 #include <stdexcept>
 
@@ -142,9 +143,9 @@ WorkflowStepExecution rowToStepExecution(sqlite3_stmt* stmt)
         s.completedAt = fromMs(sqlite3_column_int64(stmt, 11));
     }
 
-    s.input = json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12)));
-    s.state = json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13)));
-    s.output = json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 14)));
+    s.input = mt::JsonParser(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12))).parse();
+    s.state = mt::JsonParser(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13))).parse();
+    s.output = mt::JsonParser(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 14))).parse();
 
     return s;
 }
@@ -271,9 +272,9 @@ void bindStepExecution(
         sqlite3_bind_null(stmt, col++);
     }
 
-    const auto inputJson = json::stringify(s.input);
-    const auto stateJson = json::stringify(s.state);
-    const auto outputJson = json::stringify(s.output);
+    const auto inputJson = s.input.canonical_string();
+    const auto stateJson = s.state.canonical_string();
+    const auto outputJson = s.output.canonical_string();
 
     sqlite3_bind_text(stmt, col++, inputJson.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, col++, stateJson.c_str(), -1, SQLITE_TRANSIENT);
@@ -508,9 +509,9 @@ void SQLiteWorkflowStepExecutionStore::update(const WorkflowStepExecution& stepE
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
-    const auto inputJson = json::stringify(stepExecution.input);
-    const auto stateJson = json::stringify(stepExecution.state);
-    const auto outputJson = json::stringify(stepExecution.output);
+    const auto inputJson = stepExecution.input.canonical_string();
+    const auto stateJson = stepExecution.state.canonical_string();
+    const auto outputJson = stepExecution.output.canonical_string();
 
     Stmt stmt(db_.handle(), SQL_UPDATE_STEP);
 

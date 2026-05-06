@@ -171,7 +171,7 @@ WorkflowStepExecution makeStepExecution(
     const WorkflowExecution& execution,
     const std::string& stepName,
     int attempt,
-    const json::Value& input
+    const mt::Json& input
 )
 {
     WorkflowStepExecution stepExecution;
@@ -183,7 +183,7 @@ WorkflowStepExecution makeStepExecution(
     stepExecution.status = StepExecutionStatus::Pending;
     stepExecution.input = input;
     stepExecution.state = execution.state;
-    stepExecution.output = json::Value::object();
+    stepExecution.output = mt::Json(mt::Json::Object{});
     stepExecution.createdAt = std::chrono::system_clock::now();
     return stepExecution;
 }
@@ -211,7 +211,7 @@ std::mutex& WorkflowOrchestrator::stripeFor(const std::string& executionId) cons
 WorkflowExecution WorkflowOrchestrator::startWorkflow(
     const std::string& workflowName,
     int workflowVersion,
-    const json::Value& input
+    const mt::Json& input
 )
 {
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
@@ -230,7 +230,7 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
     execution.status = WorkflowExecutionStatus::Running;
     execution.currentStepName = definition->startWorkflowStepName;
     execution.input = input;
-    execution.state = json::Value::object();
+    execution.state = mt::Json(mt::Json::Object{});
     execution.currentStepAttempt = 0;
     execution.startedAt = std::chrono::system_clock::now();
 
@@ -317,7 +317,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     const std::string& workflowExecutionId,
     const std::string& stepName,
     const std::string& workerId,
-    const json::Value& stepOutput
+    const mt::Json& stepOutput
 )
 {
     std::lock_guard<std::mutex> lock(stripeFor(workflowExecutionId));

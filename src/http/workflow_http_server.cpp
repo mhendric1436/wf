@@ -1,7 +1,9 @@
 #include "wf/http/workflow_http_server.hpp"
 
 #include "httplib/httplib.h"
-#include "wf/json.hpp"
+#include "mt/errors.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/workflow_json.hpp"
 
 #include <stdexcept>
@@ -20,11 +22,11 @@ namespace
 void sendJson(
     httplib::Response& res,
     int status,
-    const json::Value& body
+    const mt::Json& body
 )
 {
     res.status = status;
-    res.set_content(json::stringify(body), "application/json");
+    res.set_content(body.canonical_string(), "application/json");
 }
 
 void sendProblem(
@@ -35,14 +37,14 @@ void sendProblem(
     const std::string& detail
 )
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj["type"] = type;
     obj["title"] = title;
     obj["status"] = status;
     obj["detail"] = detail;
 
     res.status = status;
-    res.set_content(json::stringify(json::Value(std::move(obj))), "application/problem+json");
+    res.set_content(mt::Json(std::move(obj)).canonical_string(), "application/problem+json");
 }
 
 void handleException(httplib::Response& res)
@@ -51,7 +53,7 @@ void handleException(httplib::Response& res)
     {
         throw;
     }
-    catch (const json::JsonParseError& e)
+    catch (const mt::BackendError& e)
     {
         sendProblem(res, 400, "invalid-argument", "Invalid Argument", e.what());
     }
@@ -77,33 +79,33 @@ void handleException(httplib::Response& res)
     }
 }
 
-json::Value parseBody(const httplib::Request& req)
+mt::Json parseBody(const httplib::Request& req)
 {
-    return json::parse(req.body);
+    return mt::JsonParser(req.body).parse();
 }
 
 std::string requireString(
-    const json::Value& obj,
+    const mt::Json& obj,
     const std::string& key
 )
 {
-    if (!obj.contains(key))
+    if (!obj.is_object() || !obj.as_object().count(key))
     {
         throw std::invalid_argument("missing required field: " + key);
     }
-    return obj[key].asString();
+    return obj[key].as_string();
 }
 
 int requireInt(
-    const json::Value& obj,
+    const mt::Json& obj,
     const std::string& key
 )
 {
-    if (!obj.contains(key))
+    if (!obj.is_object() || !obj.as_object().count(key))
     {
         throw std::invalid_argument("missing required field: " + key);
     }
-    return obj[key].asInt();
+    return static_cast<int>(obj[key].as_int64());
 }
 
 } // namespace
@@ -219,9 +221,9 @@ struct WorkflowHttpServer::Impl
                 ValidateWorkflowDefinitionRequest{.definitionJson = body}
             );
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["validation"] = toJson(response.validation);
-            sendJson(res, 200, json::Value(std::move(out)));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -238,15 +240,15 @@ struct WorkflowHttpServer::Impl
         {
             const auto response = service.listWorkflowDefinitions(ListWorkflowDefinitionsRequest{});
 
-            json::Value::Array defs;
+            mt::Json::Array defs;
             for (const auto& key : response.definitions)
             {
                 defs.push_back(toJson(key));
             }
 
-            json::Value::Object out;
-            out["definitions"] = json::Value(std::move(defs));
-            sendJson(res, 200, json::Value(std::move(out)));
+            mt::Json::Object out;
+            out["definitions"] = mt::Json(std::move(defs));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -266,9 +268,9 @@ struct WorkflowHttpServer::Impl
                 RegisterWorkflowDefinitionRequest{.definitionJson = body}
             );
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["definition"] = toJson(response.definition);
-            sendJson(res, 201, json::Value(std::move(out)));
+            sendJson(res, 201, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -288,13 +290,15 @@ struct WorkflowHttpServer::Impl
             StartWorkflowExecutionRequest request;
             request.workflowName = requireString(body, "workflowName");
             request.workflowVersion = requireInt(body, "workflowVersion");
-            request.input = body.contains("input") ? body["input"] : json::Value::object();
+            request.input = (body.is_object() && body.as_object().count("input"))
+                                ? body["input"]
+                                : mt::Json(mt::Json::Object{});
 
             const auto response = service.startWorkflowExecution(request);
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["execution"] = toJson(response.execution);
-            sendJson(res, 201, json::Value(std::move(out)));
+            sendJson(res, 201, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -322,9 +326,9 @@ struct WorkflowHttpServer::Impl
                 return;
             }
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["execution"] = toJson(response.execution.value());
-            sendJson(res, 200, json::Value(std::move(out)));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -343,9 +347,9 @@ struct WorkflowHttpServer::Impl
             const auto response =
                 service.cancelWorkflow(CancelWorkflowRequest{.workflowExecutionId = id});
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["execution"] = toJson(response.execution);
-            sendJson(res, 200, json::Value(std::move(out)));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -366,21 +370,22 @@ struct WorkflowHttpServer::Impl
             request.workflowName = requireString(body, "workflowName");
             request.workflowVersion = requireInt(body, "workflowVersion");
             request.workerId = requireString(body, "workerId");
-            request.maxResults = body.contains("maxResults")
-                                     ? static_cast<std::size_t>(body["maxResults"].asInt())
-                                     : 1;
+            request.maxResults =
+                (body.is_object() && body.as_object().count("maxResults"))
+                    ? static_cast<std::size_t>(static_cast<int>(body["maxResults"].as_int64()))
+                    : 1;
 
             const auto response = service.pollAndClaimWorkflowSteps(request);
 
-            json::Value::Array steps;
+            mt::Json::Array steps;
             for (const auto& step : response.steps)
             {
                 steps.push_back(toJson(step));
             }
 
-            json::Value::Object out;
-            out["steps"] = json::Value(std::move(steps));
-            sendJson(res, 200, json::Value(std::move(out)));
+            mt::Json::Object out;
+            out["steps"] = mt::Json(std::move(steps));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -404,9 +409,9 @@ struct WorkflowHttpServer::Impl
 
             const auto response = service.keepAliveWorkflowStep(request);
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["step"] = toJson(response.step);
-            sendJson(res, 200, json::Value(std::move(out)));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -427,14 +432,15 @@ struct WorkflowHttpServer::Impl
             request.workflowExecutionId = requireString(body, "workflowExecutionId");
             request.stepName = requireString(body, "stepName");
             request.workerId = requireString(body, "workerId");
-            request.stepOutput =
-                body.contains("stepOutput") ? body["stepOutput"] : json::Value::object();
+            request.stepOutput = (body.is_object() && body.as_object().count("stepOutput"))
+                                     ? body["stepOutput"]
+                                     : mt::Json(mt::Json::Object{});
 
             const auto response = service.completeWorkflowStep(request);
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["execution"] = toJson(response.execution);
-            sendJson(res, 200, json::Value(std::move(out)));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {
@@ -459,9 +465,9 @@ struct WorkflowHttpServer::Impl
 
             const auto response = service.failWorkflowStep(request);
 
-            json::Value::Object out;
+            mt::Json::Object out;
             out["execution"] = toJson(response.execution);
-            sendJson(res, 200, json::Value(std::move(out)));
+            sendJson(res, 200, mt::Json(std::move(out)));
         }
         catch (...)
         {

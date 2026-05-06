@@ -1,4 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 
 #include <chrono>
@@ -39,9 +40,9 @@ WorkflowStepExecution makeStepExecution(
     stepExecution.stepName = stepName;
     stepExecution.attempt = attempt;
     stepExecution.status = StepExecutionStatus::Pending;
-    stepExecution.input = workflow::json::Value::object();
-    stepExecution.state = workflow::json::Value::object();
-    stepExecution.output = workflow::json::Value::object();
+    stepExecution.input = mt::Json(mt::Json::Object{});
+    stepExecution.state = mt::Json(mt::Json::Object{});
+    stepExecution.output = mt::Json(mt::Json::Object{});
     return stepExecution;
 }
 
@@ -123,7 +124,11 @@ TEST_CASE("in-memory workflow step execution store updates existing step executi
 
     stepExecution.status = StepExecutionStatus::Completed;
     stepExecution.workerId = "worker-001";
-    stepExecution.output["valid"] = true;
+    {
+        mt::Json::Object outputObj;
+        outputObj["valid"] = true;
+        stepExecution.output = mt::Json(std::move(outputObj));
+    }
     store.update(stepExecution);
 
     const auto found = store.find("wfexec-001", "validateOrder", 0);
@@ -132,8 +137,8 @@ TEST_CASE("in-memory workflow step execution store updates existing step executi
     REQUIRE(found->status == StepExecutionStatus::Completed);
     REQUIRE(found->workerId.has_value());
     REQUIRE(found->workerId.value() == "worker-001");
-    REQUIRE(found->output.contains("valid"));
-    REQUIRE(found->output.at("valid").asBool());
+    REQUIRE((found->output.is_object() && found->output.as_object().count("valid")));
+    REQUIRE(found->output.at("valid").as_bool());
 }
 
 TEST_CASE("in-memory workflow step execution store update throws for missing step execution")

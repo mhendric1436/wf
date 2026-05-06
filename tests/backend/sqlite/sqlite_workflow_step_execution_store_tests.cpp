@@ -1,4 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
 #include "wf/backend/sqlite/sqlite_database.hpp"
 #include "wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp"
 
@@ -39,9 +40,9 @@ WorkflowStepExecution makeStepExecution(
     s.stepName = stepName;
     s.attempt = attempt;
     s.status = StepExecutionStatus::Pending;
-    s.input = workflow::json::Value::object();
-    s.state = workflow::json::Value::object();
-    s.output = workflow::json::Value::object();
+    s.input = mt::Json(mt::Json::Object{});
+    s.state = mt::Json(mt::Json::Object{});
+    s.output = mt::Json(mt::Json::Object{});
     return s;
 }
 

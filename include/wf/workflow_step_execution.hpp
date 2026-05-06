@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 #include "wf/workflow_execution.hpp"
 
 #include <chrono>
@@ -29,9 +29,9 @@ struct WorkflowStepExecution
     std::optional<std::chrono::system_clock::time_point> startedAt;
     std::optional<std::chrono::system_clock::time_point> completedAt;
 
-    json::Value input = json::Value::object();
-    json::Value state = json::Value::object();
-    json::Value output = json::Value::object();
+    mt::Json input = mt::Json(mt::Json::Object{});
+    mt::Json state = mt::Json(mt::Json::Object{});
+    mt::Json output = mt::Json(mt::Json::Object{});
 };
 
 } // namespace workflow

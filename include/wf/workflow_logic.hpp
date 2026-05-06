@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 
 #include <optional>
 #include <string>
@@ -14,17 +14,17 @@ struct StepCompletionContext
     int workflowVersion;
     std::string workflowExecutionId;
     std::string completedStepName;
-    json::Value input;
-    json::Value state;
-    json::Value stepOutput;
+    mt::Json input;
+    mt::Json state;
+    mt::Json stepOutput;
 };
 
 struct NextStepDecision
 {
     bool workflowComplete = false;
     std::optional<std::string> nextStepName;
-    json::Value updatedState = json::Value::object();
-    json::Value nextStepInput = json::Value::object();
+    mt::Json updatedState = mt::Json(mt::Json::Object{});
+    mt::Json nextStepInput = mt::Json(mt::Json::Object{});
 };
 
 class WorkflowLogic

@@ -1,9 +1,10 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
-#include "wf/json.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/http_transport.hpp"
 #include "wf/workflow_client.hpp"
@@ -34,7 +35,6 @@ using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
 using workflow::backend::memory::InMemoryWorkflowExecutionStore;
 using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 using workflow::http::WorkflowHttpServer;
-using workflow::json::Value;
 using workflow::logic::StepOutputRoutingLogic;
 using workflow::transport::HttpTransport;
 
@@ -122,7 +122,7 @@ struct E2ETestContext
     void registerWorkflow(const char* json)
     {
         observerClient.registerWorkflowDefinition(
-            RegisterWorkflowDefinitionRequest{.definitionJson = workflow::json::parse(json)}
+            RegisterWorkflowDefinitionRequest{.definitionJson = mt::JsonParser(json).parse()}
         );
     }
 
@@ -186,16 +186,16 @@ WorkflowWorkerPool::Options fastOptions(
     return opts;
 }
 
-Value nextStep(const std::string& name)
+mt::Json nextStep(const std::string& name)
 {
-    Value::Object out;
+    mt::Json::Object out;
     out["nextStep"] = name;
-    return Value(std::move(out));
+    return mt::Json(std::move(out));
 }
 
-Value completeOutput()
+mt::Json completeOutput()
 {
-    return Value::object();
+    return mt::Json(mt::Json::Object{});
 }
 
 } // namespace
@@ -262,7 +262,7 @@ TEST_CASE("e2e: handler throws causes workflow to fail over HTTP")
     );
     pool.registerStep(
         "shipOrder",
-        [](const WorkflowStepExecution&) -> Value { throw std::runtime_error("out of stock"); }
+        [](const WorkflowStepExecution&) -> mt::Json { throw std::runtime_error("out of stock"); }
     );
     pool.start();
 
@@ -331,7 +331,7 @@ TEST_CASE("e2e: one definition failing does not prevent the other from completin
     WorkflowWorkerPool pool(ctx.poolClient, ctx.allDefinitions(), "pool-001", fastOptions());
     pool.registerStep(
         "validateOrder",
-        [](const WorkflowStepExecution&) -> Value { throw std::runtime_error("payment error"); }
+        [](const WorkflowStepExecution&) -> mt::Json { throw std::runtime_error("payment error"); }
     );
     pool.registerStep("shipOrder", [](const WorkflowStepExecution&) { return completeOutput(); });
     pool.start();
@@ -397,7 +397,7 @@ TEST_CASE("e2e: concurrent steps never exceed threadCount")
     );
     pool.registerStep(
         "shipOrder",
-        [&](const WorkflowStepExecution&) -> Value
+        [&](const WorkflowStepExecution&) -> mt::Json
         {
             const int cur = ++active;
             int prev = maxActive.load();
@@ -440,7 +440,7 @@ TEST_CASE("e2e: pool stop drains in-flight steps before returning")
     );
     pool.registerStep(
         "shipOrder",
-        [&](const WorkflowStepExecution&) -> Value
+        [&](const WorkflowStepExecution&) -> mt::Json
         {
             handlerStarted = true;
             while (!handlerAllowFinish)

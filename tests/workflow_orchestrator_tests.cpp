@@ -55,7 +55,7 @@ NextStepDecision completeWorkflowDecision()
 {
     NextStepDecision decision;
     decision.workflowComplete = true;
-    decision.updatedState = workflow::json::Value::object();
+    decision.updatedState = mt::Json(mt::Json::Object{});
     return decision;
 }
 
@@ -64,7 +64,7 @@ NextStepDecision nextStepDecision(const std::string& stepName)
     NextStepDecision decision;
     decision.workflowComplete = false;
     decision.nextStepName = stepName;
-    decision.updatedState = workflow::json::Value::object();
+    decision.updatedState = mt::Json(mt::Json::Object{});
     return decision;
 }
 
@@ -123,9 +123,7 @@ struct TestContext
 
 WorkflowExecution startWorkflow(TestContext& context)
 {
-    return context.orchestrator.startWorkflow(
-        "orderProcessing", 1, workflow::json::Value::object()
-    );
+    return context.orchestrator.startWorkflow("orderProcessing", 1, mt::Json(mt::Json::Object{}));
 }
 
 std::vector<WorkflowStepExecution> pollAndClaim(
@@ -234,8 +232,9 @@ TEST_CASE("orchestrator complete step with active lease advances to next pending
     const auto execution = startWorkflow(context);
     claimStartStep(context, "worker-001");
 
-    workflow::json::Value stepOutput = workflow::json::Value::object();
-    stepOutput["valid"] = true;
+    mt::Json::Object _stepOutputObj;
+    _stepOutputObj["valid"] = true;
+    mt::Json stepOutput(std::move(_stepOutputObj));
 
     const auto updatedExecution = context.orchestrator.completeStep(
         execution.workflowExecutionId, "validateOrder", "worker-001", stepOutput
@@ -253,8 +252,10 @@ TEST_CASE("orchestrator complete step with active lease advances to next pending
 
     REQUIRE(completedStep.has_value());
     REQUIRE(completedStep->status == StepExecutionStatus::Completed);
-    REQUIRE(completedStep->output.contains("valid"));
-    REQUIRE(completedStep->output.at("valid").asBool());
+    REQUIRE(
+        (completedStep->output.is_object() && completedStep->output.as_object().count("valid"))
+    );
+    REQUIRE(completedStep->output.at("valid").as_bool());
 
     const auto nextStep =
         context.stepExecutionStore.find(execution.workflowExecutionId, "chargePayment", 0);
@@ -280,7 +281,7 @@ TEST_CASE("orchestrator rejects complete after lease expiry")
     REQUIRE_THROWS_AS(
         context.orchestrator.completeStep(
             execution.workflowExecutionId, "validateOrder", "worker-001",
-            workflow::json::Value::object()
+            mt::Json(mt::Json::Object{})
         ),
         std::runtime_error
     );
@@ -348,8 +349,7 @@ TEST_CASE("orchestrator completes workflow when workflow logic returns complete 
     claimStartStep(context, "worker-001");
 
     const auto updatedExecution = context.orchestrator.completeStep(
-        execution.workflowExecutionId, "validateOrder", "worker-001",
-        workflow::json::Value::object()
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
     );
 
     REQUIRE(updatedExecution.status == WorkflowExecutionStatus::Completed);
@@ -370,7 +370,7 @@ TEST_CASE("orchestrator rejects complete from non-owning worker")
     REQUIRE_THROWS_AS(
         context.orchestrator.completeStep(
             execution.workflowExecutionId, "validateOrder", "worker-002",
-            workflow::json::Value::object()
+            mt::Json(mt::Json::Object{})
         ),
         std::runtime_error
     );
@@ -547,8 +547,7 @@ TEST_CASE("completeStep sets completedAt on step execution")
 
     const auto before = std::chrono::system_clock::now();
     context.orchestrator.completeStep(
-        execution.workflowExecutionId, "validateOrder", "worker-001",
-        workflow::json::Value::object()
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
     );
     const auto after = std::chrono::system_clock::now();
 
@@ -624,8 +623,7 @@ TEST_CASE("completeStep sets completedAt on workflow execution when workflow com
 
     const auto before = std::chrono::system_clock::now();
     const auto result = context.orchestrator.completeStep(
-        execution.workflowExecutionId, "validateOrder", "worker-001",
-        workflow::json::Value::object()
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
     );
     const auto after = std::chrono::system_clock::now();
 
@@ -641,8 +639,7 @@ TEST_CASE("completeStep does not set completedAt when workflow continues to next
     claimStartStep(context);
 
     const auto result = context.orchestrator.completeStep(
-        execution.workflowExecutionId, "validateOrder", "worker-001",
-        workflow::json::Value::object()
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
     );
 
     REQUIRE_FALSE(result.completedAt.has_value());
@@ -733,8 +730,7 @@ TEST_CASE("independent workflow executions can be completed concurrently without
         [&]()
         {
             resultA = context.orchestrator.completeStep(
-                execA.workflowExecutionId, "validateOrder", "worker-A",
-                workflow::json::Value::object()
+                execA.workflowExecutionId, "validateOrder", "worker-A", mt::Json(mt::Json::Object{})
             );
         }
     );
@@ -743,8 +739,7 @@ TEST_CASE("independent workflow executions can be completed concurrently without
         [&]()
         {
             resultB = context.orchestrator.completeStep(
-                execB.workflowExecutionId, "validateOrder", "worker-B",
-                workflow::json::Value::object()
+                execB.workflowExecutionId, "validateOrder", "worker-B", mt::Json(mt::Json::Object{})
             );
         }
     );

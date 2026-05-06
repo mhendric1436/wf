@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 
 #include <optional>
 #include <string>
@@ -15,7 +15,7 @@ struct WorkflowStep
     std::optional<std::string> expectedExecutionTime;
     std::optional<int> maxRetries;
 
-    json::Value::Object additionalFields;
+    mt::Json::Object additionalFields;
 };
 
 struct WorkflowDefinition

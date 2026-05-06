@@ -1,8 +1,9 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
-#include "wf/json.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/in_process_transport.hpp"
 #include "wf/workflow_client.hpp"
@@ -30,7 +31,6 @@ using workflow::WorkflowWorker;
 using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
 using workflow::backend::memory::InMemoryWorkflowExecutionStore;
 using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
-using workflow::json::Value;
 using workflow::logic::StepOutputRoutingLogic;
 using workflow::transport::InProcessTransport;
 
@@ -80,7 +80,7 @@ struct WorkerTestContext
     {
         client.registerWorkflowDefinition(
             RegisterWorkflowDefinitionRequest{
-                .definitionJson = workflow::json::parse(WORKFLOW_JSON)
+                .definitionJson = mt::JsonParser(WORKFLOW_JSON).parse()
             }
         );
     }
@@ -111,16 +111,16 @@ struct WorkerTestContext
     }
 };
 
-Value nextStep(const std::string& name)
+mt::Json nextStep(const std::string& name)
 {
-    Value::Object out;
+    mt::Json::Object out;
     out["nextStep"] = name;
-    return Value(std::move(out));
+    return mt::Json(std::move(out));
 }
 
-Value completeOutput()
+mt::Json completeOutput()
 {
-    return Value::object();
+    return mt::Json(mt::Json::Object{});
 }
 
 } // namespace
@@ -196,7 +196,7 @@ TEST_CASE("WorkflowWorker fails step when handler throws")
 
     WorkflowWorker worker(ctx.client, "orderProcessing", 1, "worker-001", fastOptions());
     worker.registerStep(
-        "validateOrder", [](const WorkflowStepExecution&) -> Value
+        "validateOrder", [](const WorkflowStepExecution&) -> mt::Json
         { throw std::runtime_error("something went wrong"); }
     );
     worker.start();

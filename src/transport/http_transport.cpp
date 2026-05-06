@@ -1,7 +1,8 @@
 #include "wf/transport/http_transport.hpp"
 
 #include "httplib/httplib.h"
-#include "wf/json.hpp"
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "wf/workflow_json.hpp"
 
 #include <stdexcept>
@@ -29,10 +30,10 @@ void checkResponse(const httplib::Result& result)
 
     try
     {
-        const auto body = json::parse(result->body);
-        if (body.contains("detail"))
+        const auto body = mt::JsonParser(result->body).parse();
+        if (body.is_object() && body.as_object().count("detail"))
         {
-            detail = body.at("detail").asString();
+            detail = body.at("detail").as_string();
         }
     }
     catch (...)
@@ -47,9 +48,9 @@ void checkResponse(const httplib::Result& result)
     throw std::runtime_error(detail);
 }
 
-json::Value parseBody(const httplib::Result& result)
+mt::Json parseBody(const httplib::Result& result)
 {
-    return json::parse(result->body);
+    return mt::JsonParser(result->body).parse();
 }
 
 } // namespace
@@ -71,10 +72,10 @@ struct HttpTransport::Impl
 
     httplib::Result post(
         const std::string& path,
-        const json::Value& body
+        const mt::Json& body
     )
     {
-        return client.Post(path, json::stringify(body), "application/json");
+        return client.Post(path, body.canonical_string(), "application/json");
     }
 
     httplib::Result get(const std::string& path)
@@ -133,7 +134,7 @@ HttpTransport::listWorkflowDefinitions(const ListWorkflowDefinitionsRequest&)
     const auto body = parseBody(result);
 
     ListWorkflowDefinitionsResponse response;
-    for (const auto& item : body.at("definitions").asArray())
+    for (const auto& item : body.at("definitions").as_array())
     {
         response.definitions.push_back(workflowDefinitionKeyFromJson(item));
     }
@@ -143,12 +144,12 @@ HttpTransport::listWorkflowDefinitions(const ListWorkflowDefinitionsRequest&)
 StartWorkflowExecutionResponse
 HttpTransport::startWorkflowExecution(const StartWorkflowExecutionRequest& request)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj["workflowName"] = request.workflowName;
     obj["workflowVersion"] = request.workflowVersion;
     obj["input"] = request.input;
 
-    const auto result = impl_->post("/v1/workflow-executions", json::Value(std::move(obj)));
+    const auto result = impl_->post("/v1/workflow-executions", mt::Json(std::move(obj)));
     checkResponse(result);
     const auto body = parseBody(result);
     return StartWorkflowExecutionResponse{
@@ -191,19 +192,19 @@ CancelWorkflowResponse HttpTransport::cancelWorkflow(const CancelWorkflowRequest
 PollAndClaimWorkflowStepsResponse
 HttpTransport::pollAndClaimWorkflowSteps(const PollAndClaimWorkflowStepsRequest& request)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj["workflowName"] = request.workflowName;
     obj["workflowVersion"] = request.workflowVersion;
     obj["workerId"] = request.workerId;
     obj["maxResults"] = static_cast<int>(request.maxResults);
 
     const auto result =
-        impl_->post("/v1/workflow-step-executions/poll-and-claim", json::Value(std::move(obj)));
+        impl_->post("/v1/workflow-step-executions/poll-and-claim", mt::Json(std::move(obj)));
     checkResponse(result);
     const auto body = parseBody(result);
 
     PollAndClaimWorkflowStepsResponse response;
-    for (const auto& item : body.at("steps").asArray())
+    for (const auto& item : body.at("steps").as_array())
     {
         response.steps.push_back(workflowStepExecutionFromJson(item));
     }
@@ -213,13 +214,13 @@ HttpTransport::pollAndClaimWorkflowSteps(const PollAndClaimWorkflowStepsRequest&
 KeepAliveWorkflowStepResponse
 HttpTransport::keepAliveWorkflowStep(const KeepAliveWorkflowStepRequest& request)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj["workflowExecutionId"] = request.workflowExecutionId;
     obj["stepName"] = request.stepName;
     obj["workerId"] = request.workerId;
 
     const auto result =
-        impl_->post("/v1/workflow-step-executions/keep-alive", json::Value(std::move(obj)));
+        impl_->post("/v1/workflow-step-executions/keep-alive", mt::Json(std::move(obj)));
     checkResponse(result);
     const auto body = parseBody(result);
     return KeepAliveWorkflowStepResponse{
@@ -230,14 +231,14 @@ HttpTransport::keepAliveWorkflowStep(const KeepAliveWorkflowStepRequest& request
 CompleteWorkflowStepResponse
 HttpTransport::completeWorkflowStep(const CompleteWorkflowStepRequest& request)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj["workflowExecutionId"] = request.workflowExecutionId;
     obj["stepName"] = request.stepName;
     obj["workerId"] = request.workerId;
     obj["stepOutput"] = request.stepOutput;
 
     const auto result =
-        impl_->post("/v1/workflow-step-executions/complete", json::Value(std::move(obj)));
+        impl_->post("/v1/workflow-step-executions/complete", mt::Json(std::move(obj)));
     checkResponse(result);
     const auto body = parseBody(result);
     return CompleteWorkflowStepResponse{
@@ -247,14 +248,13 @@ HttpTransport::completeWorkflowStep(const CompleteWorkflowStepRequest& request)
 
 FailWorkflowStepResponse HttpTransport::failWorkflowStep(const FailWorkflowStepRequest& request)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj["workflowExecutionId"] = request.workflowExecutionId;
     obj["stepName"] = request.stepName;
     obj["workerId"] = request.workerId;
     obj["reason"] = request.reason;
 
-    const auto result =
-        impl_->post("/v1/workflow-step-executions/fail", json::Value(std::move(obj)));
+    const auto result = impl_->post("/v1/workflow-step-executions/fail", mt::Json(std::move(obj)));
     checkResponse(result);
     const auto body = parseBody(result);
     return FailWorkflowStepResponse{

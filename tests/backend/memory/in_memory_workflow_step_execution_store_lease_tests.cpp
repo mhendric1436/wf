@@ -1,4 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/json.hpp"
 #include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 
 #include <chrono>
@@ -37,9 +38,9 @@ WorkflowStepExecution makeStepExecution(
     stepExecution.stepName = stepName;
     stepExecution.attempt = attempt;
     stepExecution.status = StepExecutionStatus::Pending;
-    stepExecution.input = workflow::json::Value::object();
-    stepExecution.state = workflow::json::Value::object();
-    stepExecution.output = workflow::json::Value::object();
+    stepExecution.input = mt::Json(mt::Json::Object{});
+    stepExecution.state = mt::Json(mt::Json::Object{});
+    stepExecution.output = mt::Json(mt::Json::Object{});
     return stepExecution;
 }
 

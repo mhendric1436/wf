@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wf/json.hpp"
+#include "mt/json.hpp"
 
 #include <chrono>
 #include <optional>
@@ -36,8 +36,8 @@ struct WorkflowExecution
 
     std::string currentStepName;
 
-    json::Value input = json::Value::object();
-    json::Value state = json::Value::object();
+    mt::Json input = mt::Json(mt::Json::Object{});
+    mt::Json state = mt::Json(mt::Json::Object{});
 
     int currentStepAttempt = 0;
 

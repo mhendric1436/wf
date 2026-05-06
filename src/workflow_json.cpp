@@ -1,5 +1,8 @@
 #include "wf/workflow_json.hpp"
 
+#include "mt/errors.hpp"
+#include "mt/json_parser.hpp"
+
 #include <cstdio>
 #include <ctime>
 #include <regex>
@@ -54,9 +57,9 @@ const std::regex ISO_8601_DURATION_PATTERN(
     ")?$"
 );
 
-bool isNonEmptyString(const workflow::json::Value& value)
+bool isNonEmptyString(const mt::Json& value)
 {
-    return value.isString() && !value.asString().empty();
+    return value.is_string() && !value.as_string().empty();
 }
 
 bool isValidName(const std::string& value)
@@ -70,32 +73,32 @@ bool isValidDuration(const std::string& value)
 }
 
 void requireObject(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& path
 )
 {
-    if (!value.isObject())
+    if (!value.is_object())
     {
         result.addError(path + " must be an object");
     }
 }
 
 void requireField(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
 )
 {
-    if (!value.contains(fieldName))
+    if (!value.is_object() || !value.as_object().count(fieldName))
     {
         result.addError(path + "." + fieldName + " is required");
     }
 }
 
 void validateRequiredStringField(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
@@ -103,7 +106,7 @@ void validateRequiredStringField(
 {
     requireField(value, result, fieldName, path);
 
-    if (!value.contains(fieldName))
+    if (!value.is_object() || !value.as_object().count(fieldName))
     {
         return;
     }
@@ -115,7 +118,7 @@ void validateRequiredStringField(
 }
 
 void validateRequiredNameField(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
@@ -123,12 +126,13 @@ void validateRequiredNameField(
 {
     validateRequiredStringField(value, result, fieldName, path);
 
-    if (!value.contains(fieldName) || !value.at(fieldName).isString())
+    if (!value.is_object() || !value.as_object().count(fieldName) ||
+        !value.at(fieldName).is_string())
     {
         return;
     }
 
-    const auto name = value.at(fieldName).asString();
+    const auto name = value.at(fieldName).as_string();
 
     if (!isValidName(name))
     {
@@ -137,7 +141,7 @@ void validateRequiredNameField(
 }
 
 void validateRequiredDurationField(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
@@ -145,67 +149,68 @@ void validateRequiredDurationField(
 {
     validateRequiredStringField(value, result, fieldName, path);
 
-    if (!value.contains(fieldName) || !value.at(fieldName).isString())
+    if (!value.is_object() || !value.as_object().count(fieldName) ||
+        !value.at(fieldName).is_string())
     {
         return;
     }
 
-    if (!isValidDuration(value.at(fieldName).asString()))
+    if (!isValidDuration(value.at(fieldName).as_string()))
     {
         result.addError(path + "." + fieldName + " must be an ISO-8601 duration");
     }
 }
 
 void validateOptionalDurationField(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
 )
 {
-    if (!value.contains(fieldName))
+    if (!value.is_object() || !value.as_object().count(fieldName))
     {
         return;
     }
 
-    if (!value.at(fieldName).isString())
+    if (!value.at(fieldName).is_string())
     {
         result.addError(path + "." + fieldName + " must be a string");
         return;
     }
 
-    if (!isValidDuration(value.at(fieldName).asString()))
+    if (!isValidDuration(value.at(fieldName).as_string()))
     {
         result.addError(path + "." + fieldName + " must be an ISO-8601 duration");
     }
 }
 
 void validateOptionalNonNegativeIntegerField(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result,
     const std::string& fieldName,
     const std::string& path
 )
 {
-    if (!value.contains(fieldName))
+    if (!value.is_object() || !value.as_object().count(fieldName))
     {
         return;
     }
 
-    if (!value.at(fieldName).isInt())
+    if (!value.at(fieldName).is_int64())
     {
         result.addError(path + "." + fieldName + " must be an integer");
         return;
     }
 
-    if (value.at(fieldName).asInt() < 0)
+    if (static_cast<int>(value.at(fieldName).as_int64()) < 0)
     {
         result.addError(path + "." + fieldName + " must be greater than or equal to 0");
     }
 }
 
 void validateNoAdditionalTopLevelFields(
-    const workflow::json::Value& value,
+    const mt::Json& value,
     workflow::ValidationResult& result
 )
 {
@@ -213,7 +218,7 @@ void validateNoAdditionalTopLevelFields(
         kWorkflowName, kWorkflowVersion, kStartWorkflowStepName, kExpectedExecutionTime, kSteps,
     };
 
-    for (const auto& [key, ignored] : value.asObject())
+    for (const auto& [key, ignored] : value.as_object())
     {
         (void)ignored;
 
@@ -298,9 +303,9 @@ std::string toString(StepExecutionStatus status)
     return "Pending";
 }
 
-json::Value toJson(const WorkflowStep& step)
+mt::Json toJson(const WorkflowStep& step)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj[kName] = step.name;
 
     if (step.expectedExecutionTime.has_value())
@@ -318,37 +323,37 @@ json::Value toJson(const WorkflowStep& step)
         obj[k] = v;
     }
 
-    return json::Value(std::move(obj));
+    return mt::Json(std::move(obj));
 }
 
-json::Value toJson(const WorkflowDefinition& def)
+mt::Json toJson(const WorkflowDefinition& def)
 {
-    json::Value::Array steps;
+    mt::Json::Array steps;
     for (const auto& step : def.steps)
     {
         steps.push_back(toJson(step));
     }
 
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj[kWorkflowName] = def.workflowName;
     obj[kWorkflowVersion] = def.workflowVersion;
     obj[kStartWorkflowStepName] = def.startWorkflowStepName;
     obj[kExpectedExecutionTime] = def.expectedExecutionTime;
-    obj[kSteps] = json::Value(std::move(steps));
-    return json::Value(std::move(obj));
+    obj[kSteps] = mt::Json(std::move(steps));
+    return mt::Json(std::move(obj));
 }
 
-json::Value toJson(const WorkflowDefinitionKey& key)
+mt::Json toJson(const WorkflowDefinitionKey& key)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj[kWorkflowName] = key.workflowName;
     obj[kWorkflowVersion] = key.workflowVersion;
-    return json::Value(std::move(obj));
+    return mt::Json(std::move(obj));
 }
 
-json::Value toJson(const WorkflowExecution& exec)
+mt::Json toJson(const WorkflowExecution& exec)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj[kWorkflowExecutionId] = exec.workflowExecutionId;
     obj[kWorkflowName] = exec.workflowName;
     obj[kWorkflowVersion] = exec.workflowVersion;
@@ -358,41 +363,39 @@ json::Value toJson(const WorkflowExecution& exec)
     obj[kState] = exec.state;
     obj[kCurrentStepAttempt] = exec.currentStepAttempt;
     obj[kFailureReason] =
-        exec.failureReason.has_value() ? json::Value(exec.failureReason.value()) : json::Value();
+        exec.failureReason.has_value() ? mt::Json(exec.failureReason.value()) : mt::Json{};
     obj[kStartedAt] =
-        exec.startedAt.has_value() ? json::Value(toIso8601(exec.startedAt.value())) : json::Value();
-    obj[kCompletedAt] = exec.completedAt.has_value()
-                            ? json::Value(toIso8601(exec.completedAt.value()))
-                            : json::Value();
-    return json::Value(std::move(obj));
+        exec.startedAt.has_value() ? mt::Json(toIso8601(exec.startedAt.value())) : mt::Json{};
+    obj[kCompletedAt] =
+        exec.completedAt.has_value() ? mt::Json(toIso8601(exec.completedAt.value())) : mt::Json{};
+    return mt::Json(std::move(obj));
 }
 
-json::Value toJson(const WorkflowStepExecution& step)
+mt::Json toJson(const WorkflowStepExecution& step)
 {
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj[kWorkflowExecutionId] = step.workflowExecutionId;
     obj[kWorkflowName] = step.workflowName;
     obj[kWorkflowVersion] = step.workflowVersion;
     obj[kStepName] = step.stepName;
     obj[kAttempt] = step.attempt;
     obj[kStatus] = toString(step.status);
-    obj[kWorkerId] = step.workerId.has_value() ? json::Value(step.workerId.value()) : json::Value();
+    obj[kWorkerId] = step.workerId.has_value() ? mt::Json(step.workerId.value()) : mt::Json{};
     obj[kLeaseExpiresAt] = step.leaseExpiresAt.has_value()
-                               ? json::Value(toIso8601(step.leaseExpiresAt.value()))
-                               : json::Value();
+                               ? mt::Json(toIso8601(step.leaseExpiresAt.value()))
+                               : mt::Json{};
     obj[kFailureReason] =
-        step.failureReason.has_value() ? json::Value(step.failureReason.value()) : json::Value();
+        step.failureReason.has_value() ? mt::Json(step.failureReason.value()) : mt::Json{};
     obj[kCreatedAt] =
-        step.createdAt.has_value() ? json::Value(toIso8601(step.createdAt.value())) : json::Value();
+        step.createdAt.has_value() ? mt::Json(toIso8601(step.createdAt.value())) : mt::Json{};
     obj[kStartedAt] =
-        step.startedAt.has_value() ? json::Value(toIso8601(step.startedAt.value())) : json::Value();
-    obj[kCompletedAt] = step.completedAt.has_value()
-                            ? json::Value(toIso8601(step.completedAt.value()))
-                            : json::Value();
+        step.startedAt.has_value() ? mt::Json(toIso8601(step.startedAt.value())) : mt::Json{};
+    obj[kCompletedAt] =
+        step.completedAt.has_value() ? mt::Json(toIso8601(step.completedAt.value())) : mt::Json{};
     obj[kInput] = step.input;
     obj[kState] = step.state;
     obj[kOutput] = step.output;
-    return json::Value(std::move(obj));
+    return mt::Json(std::move(obj));
 }
 
 WorkflowExecutionStatus executionStatusFromString(const std::string& s)
@@ -433,95 +436,95 @@ StepExecutionStatus stepStatusFromString(const std::string& s)
     return StepExecutionStatus::Pending;
 }
 
-WorkflowDefinitionKey workflowDefinitionKeyFromJson(const json::Value& v)
+WorkflowDefinitionKey workflowDefinitionKeyFromJson(const mt::Json& v)
 {
     return WorkflowDefinitionKey{
-        .workflowName = v.at(kWorkflowName).asString(),
-        .workflowVersion = v.at(kWorkflowVersion).asInt(),
+        .workflowName = v.at(kWorkflowName).as_string(),
+        .workflowVersion = static_cast<int>(v.at(kWorkflowVersion).as_int64()),
     };
 }
 
-WorkflowExecution workflowExecutionFromJson(const json::Value& v)
+WorkflowExecution workflowExecutionFromJson(const mt::Json& v)
 {
     WorkflowExecution exec;
-    exec.workflowExecutionId = v.at(kWorkflowExecutionId).asString();
-    exec.workflowName = v.at(kWorkflowName).asString();
-    exec.workflowVersion = v.at(kWorkflowVersion).asInt();
-    exec.status = executionStatusFromString(v.at(kStatus).asString());
-    exec.currentStepName = v.at(kCurrentStepName).asString();
+    exec.workflowExecutionId = v.at(kWorkflowExecutionId).as_string();
+    exec.workflowName = v.at(kWorkflowName).as_string();
+    exec.workflowVersion = static_cast<int>(v.at(kWorkflowVersion).as_int64());
+    exec.status = executionStatusFromString(v.at(kStatus).as_string());
+    exec.currentStepName = v.at(kCurrentStepName).as_string();
     exec.input = v.at(kInput);
     exec.state = v.at(kState);
-    exec.currentStepAttempt = v.at(kCurrentStepAttempt).asInt();
+    exec.currentStepAttempt = static_cast<int>(v.at(kCurrentStepAttempt).as_int64());
 
-    if (v.contains(kFailureReason) && !v.at(kFailureReason).isNull())
+    if (v.is_object() && v.as_object().count(kFailureReason) && !v.at(kFailureReason).is_null())
     {
-        exec.failureReason = v.at(kFailureReason).asString();
+        exec.failureReason = v.at(kFailureReason).as_string();
     }
 
-    if (v.contains(kStartedAt) && !v.at(kStartedAt).isNull())
+    if (v.is_object() && v.as_object().count(kStartedAt) && !v.at(kStartedAt).is_null())
     {
-        exec.startedAt = fromIso8601(v.at(kStartedAt).asString());
+        exec.startedAt = fromIso8601(v.at(kStartedAt).as_string());
     }
 
-    if (v.contains(kCompletedAt) && !v.at(kCompletedAt).isNull())
+    if (v.is_object() && v.as_object().count(kCompletedAt) && !v.at(kCompletedAt).is_null())
     {
-        exec.completedAt = fromIso8601(v.at(kCompletedAt).asString());
+        exec.completedAt = fromIso8601(v.at(kCompletedAt).as_string());
     }
 
     return exec;
 }
 
-WorkflowStepExecution workflowStepExecutionFromJson(const json::Value& v)
+WorkflowStepExecution workflowStepExecutionFromJson(const mt::Json& v)
 {
     WorkflowStepExecution step;
-    step.workflowExecutionId = v.at(kWorkflowExecutionId).asString();
-    step.workflowName = v.at(kWorkflowName).asString();
-    step.workflowVersion = v.at(kWorkflowVersion).asInt();
-    step.stepName = v.at(kStepName).asString();
-    step.attempt = v.at(kAttempt).asInt();
-    step.status = stepStatusFromString(v.at(kStatus).asString());
+    step.workflowExecutionId = v.at(kWorkflowExecutionId).as_string();
+    step.workflowName = v.at(kWorkflowName).as_string();
+    step.workflowVersion = static_cast<int>(v.at(kWorkflowVersion).as_int64());
+    step.stepName = v.at(kStepName).as_string();
+    step.attempt = static_cast<int>(v.at(kAttempt).as_int64());
+    step.status = stepStatusFromString(v.at(kStatus).as_string());
 
-    if (v.contains(kWorkerId) && !v.at(kWorkerId).isNull())
+    if (v.is_object() && v.as_object().count(kWorkerId) && !v.at(kWorkerId).is_null())
     {
-        step.workerId = v.at(kWorkerId).asString();
+        step.workerId = v.at(kWorkerId).as_string();
     }
 
-    if (v.contains(kLeaseExpiresAt) && !v.at(kLeaseExpiresAt).isNull())
+    if (v.is_object() && v.as_object().count(kLeaseExpiresAt) && !v.at(kLeaseExpiresAt).is_null())
     {
-        step.leaseExpiresAt = fromIso8601(v.at(kLeaseExpiresAt).asString());
+        step.leaseExpiresAt = fromIso8601(v.at(kLeaseExpiresAt).as_string());
     }
 
-    if (v.contains(kFailureReason) && !v.at(kFailureReason).isNull())
+    if (v.is_object() && v.as_object().count(kFailureReason) && !v.at(kFailureReason).is_null())
     {
-        step.failureReason = v.at(kFailureReason).asString();
+        step.failureReason = v.at(kFailureReason).as_string();
     }
 
-    if (v.contains(kCreatedAt) && !v.at(kCreatedAt).isNull())
+    if (v.is_object() && v.as_object().count(kCreatedAt) && !v.at(kCreatedAt).is_null())
     {
-        step.createdAt = fromIso8601(v.at(kCreatedAt).asString());
+        step.createdAt = fromIso8601(v.at(kCreatedAt).as_string());
     }
 
-    if (v.contains(kStartedAt) && !v.at(kStartedAt).isNull())
+    if (v.is_object() && v.as_object().count(kStartedAt) && !v.at(kStartedAt).is_null())
     {
-        step.startedAt = fromIso8601(v.at(kStartedAt).asString());
+        step.startedAt = fromIso8601(v.at(kStartedAt).as_string());
     }
 
-    if (v.contains(kCompletedAt) && !v.at(kCompletedAt).isNull())
+    if (v.is_object() && v.as_object().count(kCompletedAt) && !v.at(kCompletedAt).is_null())
     {
-        step.completedAt = fromIso8601(v.at(kCompletedAt).asString());
+        step.completedAt = fromIso8601(v.at(kCompletedAt).as_string());
     }
 
-    if (v.contains(kInput))
+    if (v.is_object() && v.as_object().count(kInput))
     {
         step.input = v.at(kInput);
     }
 
-    if (v.contains(kState))
+    if (v.is_object() && v.as_object().count(kState))
     {
         step.state = v.at(kState);
     }
 
-    if (v.contains(kOutput))
+    if (v.is_object() && v.as_object().count(kOutput))
     {
         step.output = v.at(kOutput);
     }
@@ -529,34 +532,34 @@ WorkflowStepExecution workflowStepExecutionFromJson(const json::Value& v)
     return step;
 }
 
-ValidationResult validationResultFromJson(const json::Value& v)
+ValidationResult validationResultFromJson(const mt::Json& v)
 {
     ValidationResult result;
-    result.valid = v.at(kValid).asBool();
+    result.valid = v.at(kValid).as_bool();
 
-    for (const auto& e : v.at(kErrors).asArray())
+    for (const auto& e : v.at(kErrors).as_array())
     {
-        result.errors.push_back(e.asString());
+        result.errors.push_back(e.as_string());
     }
 
     return result;
 }
 
-json::Value toJson(const ValidationResult& result)
+mt::Json toJson(const ValidationResult& result)
 {
-    json::Value::Array errors;
+    mt::Json::Array errors;
     for (const auto& e : result.errors)
     {
-        errors.push_back(json::Value(e));
+        errors.push_back(mt::Json(e));
     }
 
-    json::Value::Object obj;
+    mt::Json::Object obj;
     obj[kValid] = result.valid;
-    obj[kErrors] = json::Value(std::move(errors));
-    return json::Value(std::move(obj));
+    obj[kErrors] = mt::Json(std::move(errors));
+    return mt::Json(std::move(obj));
 }
 
-ValidationResult validateWorkflowJson(const json::Value& value)
+ValidationResult validateWorkflowJson(const mt::Json& value)
 {
     ValidationResult result;
 
@@ -575,13 +578,13 @@ ValidationResult validateWorkflowJson(const json::Value& value)
 
     requireField(value, result, kWorkflowVersion, kRootPath);
 
-    if (value.contains(kWorkflowVersion))
+    if (value.is_object() && value.as_object().count(kWorkflowVersion))
     {
-        if (!value.at(kWorkflowVersion).isInt())
+        if (!value.at(kWorkflowVersion).is_int64())
         {
             result.addError("$.workflowVersion must be an integer");
         }
-        else if (value.at(kWorkflowVersion).asInt() < 1)
+        else if (static_cast<int>(value.at(kWorkflowVersion).as_int64()) < 1)
         {
             result.addError("$.workflowVersion must be greater than or equal to 1");
         }
@@ -589,18 +592,18 @@ ValidationResult validateWorkflowJson(const json::Value& value)
 
     requireField(value, result, kSteps, kRootPath);
 
-    if (!value.contains(kSteps))
+    if (!value.is_object() || !value.as_object().count(kSteps))
     {
         return result;
     }
 
-    if (!value.at(kSteps).isArray())
+    if (!value.at(kSteps).is_array())
     {
         result.addError("$.steps must be an array");
         return result;
     }
 
-    const auto& steps = value.at(kSteps).asArray();
+    const auto& steps = value.at(kSteps).as_array();
 
     if (steps.empty())
     {
@@ -615,7 +618,7 @@ ValidationResult validateWorkflowJson(const json::Value& value)
         const auto path = "$.steps[" + std::to_string(i) + "]";
         const auto& step = steps.at(i);
 
-        if (!step.isObject())
+        if (!step.is_object())
         {
             result.addError(path + " must be an object");
             continue;
@@ -625,9 +628,9 @@ ValidationResult validateWorkflowJson(const json::Value& value)
         validateOptionalDurationField(step, result, kExpectedExecutionTime, path);
         validateOptionalNonNegativeIntegerField(step, result, kMaxRetries, path);
 
-        if (step.contains(kName) && step.at(kName).isString())
+        if (step.is_object() && step.as_object().count(kName) && step.at(kName).is_string())
         {
-            const auto name = step.at(kName).asString();
+            const auto name = step.at(kName).as_string();
 
             if (stepNames.contains(name))
             {
@@ -640,9 +643,10 @@ ValidationResult validateWorkflowJson(const json::Value& value)
         }
     }
 
-    if (value.contains(kStartWorkflowStepName) && value.at(kStartWorkflowStepName).isString())
+    if (value.is_object() && value.as_object().count(kStartWorkflowStepName) &&
+        value.at(kStartWorkflowStepName).is_string())
     {
-        const auto startStepName = value.at(kStartWorkflowStepName).asString();
+        const auto startStepName = value.at(kStartWorkflowStepName).as_string();
 
         if (!stepNames.contains(startStepName))
         {
@@ -653,7 +657,7 @@ ValidationResult validateWorkflowJson(const json::Value& value)
     return result;
 }
 
-WorkflowDefinition parseWorkflowDefinition(const json::Value& value)
+WorkflowDefinition parseWorkflowDefinition(const mt::Json& value)
 {
     const auto validation = validateWorkflowJson(value);
 
@@ -671,27 +675,27 @@ WorkflowDefinition parseWorkflowDefinition(const json::Value& value)
     }
 
     WorkflowDefinition workflow;
-    workflow.workflowName = value.at(kWorkflowName).asString();
-    workflow.workflowVersion = value.at(kWorkflowVersion).asInt();
-    workflow.startWorkflowStepName = value.at(kStartWorkflowStepName).asString();
-    workflow.expectedExecutionTime = value.at(kExpectedExecutionTime).asString();
+    workflow.workflowName = value.at(kWorkflowName).as_string();
+    workflow.workflowVersion = static_cast<int>(value.at(kWorkflowVersion).as_int64());
+    workflow.startWorkflowStepName = value.at(kStartWorkflowStepName).as_string();
+    workflow.expectedExecutionTime = value.at(kExpectedExecutionTime).as_string();
 
-    for (const auto& stepValue : value.at(kSteps).asArray())
+    for (const auto& stepValue : value.at(kSteps).as_array())
     {
         WorkflowStep step;
-        step.name = stepValue.at(kName).asString();
+        step.name = stepValue.at(kName).as_string();
 
-        if (stepValue.contains(kExpectedExecutionTime))
+        if (stepValue.is_object() && stepValue.as_object().count(kExpectedExecutionTime))
         {
-            step.expectedExecutionTime = stepValue.at(kExpectedExecutionTime).asString();
+            step.expectedExecutionTime = stepValue.at(kExpectedExecutionTime).as_string();
         }
 
-        if (stepValue.contains(kMaxRetries))
+        if (stepValue.is_object() && stepValue.as_object().count(kMaxRetries))
         {
-            step.maxRetries = stepValue.at(kMaxRetries).asInt();
+            step.maxRetries = static_cast<int>(stepValue.at(kMaxRetries).as_int64());
         }
 
-        for (const auto& [key, fieldValue] : stepValue.asObject())
+        for (const auto& [key, fieldValue] : stepValue.as_object())
         {
             if (key != kName && key != kExpectedExecutionTime && key != kMaxRetries)
             {
@@ -709,10 +713,10 @@ WorkflowDefinition parseWorkflowDefinitionText(const std::string& jsonText)
 {
     try
     {
-        const auto value = json::parse(jsonText);
+        const auto value = mt::JsonParser(jsonText).parse();
         return parseWorkflowDefinition(value);
     }
-    catch (const json::JsonParseError& error)
+    catch (const mt::BackendError& error)
     {
         throw std::invalid_argument(std::string("Invalid JSON text: ") + error.what());
     }

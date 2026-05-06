@@ -258,7 +258,7 @@ struct WorkflowWorkerPool::Impl
             return;
         }
 
-        json::Value output = json::Value::object();
+        mt::Json output = mt::Json(mt::Json::Object{});
         bool succeeded = false;
         std::string failureReason;
 

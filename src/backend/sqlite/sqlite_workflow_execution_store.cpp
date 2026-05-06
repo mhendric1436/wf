@@ -1,7 +1,8 @@
 #include "wf/backend/sqlite/sqlite_workflow_execution_store.hpp"
 
+#include "mt/json.hpp"
+#include "mt/json_parser.hpp"
 #include "sqlite_helpers.hpp"
-#include "wf/json.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -30,8 +31,10 @@ WorkflowExecution rowToExecution(sqlite3_stmt* stmt)
     exec.workflowVersion = sqlite3_column_int(stmt, 2);
     exec.status = toExecutionStatus(sqlite3_column_int(stmt, 3));
     exec.currentStepName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-    exec.input = json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5)));
-    exec.state = json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6)));
+    exec.input =
+        mt::JsonParser(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5))).parse();
+    exec.state =
+        mt::JsonParser(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6))).parse();
     exec.currentStepAttempt = sqlite3_column_int(stmt, 7);
 
     if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
@@ -103,8 +106,8 @@ void SQLiteWorkflowExecutionStore::save(const WorkflowExecution& execution)
 {
     validateExecutionId(execution.workflowExecutionId);
 
-    const auto inputJson = json::stringify(execution.input);
-    const auto stateJson = json::stringify(execution.state);
+    const auto inputJson = execution.input.canonical_string();
+    const auto stateJson = execution.state.canonical_string();
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
@@ -179,8 +182,8 @@ void SQLiteWorkflowExecutionStore::update(const WorkflowExecution& execution)
 {
     validateExecutionId(execution.workflowExecutionId);
 
-    const auto inputJson = json::stringify(execution.input);
-    const auto stateJson = json::stringify(execution.state);
+    const auto inputJson = execution.input.canonical_string();
+    const auto stateJson = execution.state.canonical_string();
 
     std::lock_guard<std::mutex> lock(db_.mutex());
 
