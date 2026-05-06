@@ -16,7 +16,11 @@ It currently provides:
 - `startedAt`/`completedAt` timestamps on executions
 - workflow and step cancellation
 - pluggable store interfaces
-- in-memory backend implementations
+- in-memory backend
+- SQLite backend
+- HTTP REST API server (`WorkflowHttpServer`) with OpenAPI 3.1 spec
+- RFC 9457 Problem Details error responses
+- ISO 8601 timestamps at the HTTP boundary
 - `wf` CLI binary (`validate`, `parse` subcommands)
 - Catch2 unit tests
 - Makefile-based build using `clang++`
@@ -24,7 +28,10 @@ It currently provides:
 - formatting with `clang-format`
 - PlantUML architecture and sequence diagrams
 
-The project is intentionally lightweight and dependency-minimal. The only third-party code expected in the repo is Catch2's amalgamated test runner.
+The project is intentionally lightweight and dependency-minimal. Vendored third-party code:
+
+- Catch2 amalgamated test runner (`third_party/catch2/`)
+- cpp-httplib single-header HTTP library v0.18.5 (`third_party/httplib/`)
 
 ## Short description
 
@@ -38,6 +45,8 @@ wf/
 ├── .clang-format
 ├── .gitignore
 ├── README.md
+├── api/
+│   └── openapi.yaml
 ├── cmd/
 │   └── main.cpp
 ├── docs/
@@ -56,41 +65,64 @@ wf/
 │       ├── workflow_orchestrator.hpp
 │       ├── workflow_parser.hpp
 │       ├── workflow_service.hpp
+│       ├── http/
+│       │   └── workflow_http_server.hpp
 │       ├── store/
 │       │   ├── workflow_definition_store.hpp
 │       │   ├── workflow_execution_store.hpp
 │       │   └── workflow_step_execution_store.hpp
 │       └── backend/
-│           └── memory/
-│               ├── in_memory_workflow_definition_store.hpp
-│               ├── in_memory_workflow_execution_store.hpp
-│               └── in_memory_workflow_step_execution_store.hpp
+│           ├── memory/
+│           │   ├── in_memory_workflow_definition_store.hpp
+│           │   ├── in_memory_workflow_execution_store.hpp
+│           │   └── in_memory_workflow_step_execution_store.hpp
+│           └── sqlite/
+│               ├── sqlite_database.hpp
+│               ├── sqlite_workflow_definition_store.hpp
+│               ├── sqlite_workflow_execution_store.hpp
+│               └── sqlite_workflow_step_execution_store.hpp
 ├── src/
 │   ├── duration.cpp
 │   ├── json.cpp
 │   ├── workflow_parser.cpp
 │   ├── workflow_orchestrator.cpp
 │   ├── workflow_service.cpp
+│   ├── http/
+│   │   └── workflow_http_server.cpp
 │   └── backend/
-│       └── memory/
-│           ├── in_memory_workflow_definition_store.cpp
-│           ├── in_memory_workflow_execution_store.cpp
-│           └── in_memory_workflow_step_execution_store.cpp
+│       ├── memory/
+│       │   ├── in_memory_workflow_definition_store.cpp
+│       │   ├── in_memory_workflow_execution_store.cpp
+│       │   └── in_memory_workflow_step_execution_store.cpp
+│       └── sqlite/
+│           ├── sqlite_database.cpp
+│           ├── sqlite_workflow_definition_store.cpp
+│           ├── sqlite_workflow_execution_store.cpp
+│           └── sqlite_workflow_step_execution_store.cpp
 ├── tests/
 │   ├── duration_tests.cpp
 │   ├── workflow_parser_tests.cpp
 │   ├── workflow_orchestrator_tests.cpp
 │   ├── workflow_service_tests.cpp
+│   ├── http/
+│   │   └── workflow_http_server_tests.cpp
 │   └── backend/
-│       └── memory/
-│           ├── in_memory_workflow_definition_store_tests.cpp
-│           ├── in_memory_workflow_execution_store_tests.cpp
-│           ├── in_memory_workflow_step_execution_store_tests.cpp
-│           └── in_memory_workflow_step_execution_store_lease_tests.cpp
+│       ├── memory/
+│       │   ├── in_memory_workflow_definition_store_tests.cpp
+│       │   ├── in_memory_workflow_execution_store_tests.cpp
+│       │   ├── in_memory_workflow_step_execution_store_tests.cpp
+│       │   └── in_memory_workflow_step_execution_store_lease_tests.cpp
+│       └── sqlite/
+│           ├── sqlite_workflow_definition_store_tests.cpp
+│           ├── sqlite_workflow_execution_store_tests.cpp
+│           ├── sqlite_workflow_step_execution_store_tests.cpp
+│           └── sqlite_workflow_step_execution_store_lease_tests.cpp
 └── third_party/
-    └── catch2/
-        ├── catch_amalgamated.cpp
-        └── catch_amalgamated.hpp
+    ├── catch2/
+    │   ├── catch_amalgamated.cpp
+    │   └── catch_amalgamated.hpp
+    └── httplib/
+        └── httplib.h
 ```
 
 ## Workflow definition
@@ -611,14 +643,134 @@ tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
 
 Each store uses a `mutable std::mutex` to protect its internal map. The in-memory step execution store makes `pollAndClaim` and `keepAlive` atomic under that mutex.
 
+## SQLite backend
+
+The SQLite backend provides durable storage backed by a single SQLite database file.
+
+Headers:
+
+```text
+include/wf/backend/sqlite/sqlite_database.hpp
+include/wf/backend/sqlite/sqlite_workflow_definition_store.hpp
+include/wf/backend/sqlite/sqlite_workflow_execution_store.hpp
+include/wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp
+```
+
+Sources:
+
+```text
+src/backend/sqlite/sqlite_database.cpp
+src/backend/sqlite/sqlite_workflow_definition_store.cpp
+src/backend/sqlite/sqlite_workflow_execution_store.cpp
+src/backend/sqlite/sqlite_workflow_step_execution_store.cpp
+```
+
+Tests:
+
+```text
+tests/backend/sqlite/sqlite_workflow_definition_store_tests.cpp
+tests/backend/sqlite/sqlite_workflow_execution_store_tests.cpp
+tests/backend/sqlite/sqlite_workflow_step_execution_store_tests.cpp
+tests/backend/sqlite/sqlite_workflow_step_execution_store_lease_tests.cpp
+```
+
+`SqliteDatabase` owns the `sqlite3*` connection and creates the schema on construction. Each store holds a reference to the shared `SqliteDatabase`. The build links against `-lsqlite3`.
+
+## HTTP server
+
+`WorkflowHttpServer` exposes `WorkflowService` as an HTTP REST API. It uses cpp-httplib (single-header, vendored at `third_party/httplib/httplib.h`) behind a pimpl to keep the large header out of public interfaces.
+
+Header:
+
+```text
+include/wf/http/workflow_http_server.hpp
+```
+
+Source:
+
+```text
+src/http/workflow_http_server.cpp
+```
+
+Tests:
+
+```text
+tests/http/workflow_http_server_tests.cpp
+```
+
+### Instantiation
+
+```cpp
+#include "wf/http/workflow_http_server.hpp"
+
+WorkflowHttpServer server(service, port);  // port 0 = any available port
+int actualPort = server.bind();
+server.start();  // blocks; call from a dedicated thread
+// ...
+server.stop();
+```
+
+`bind()` returns the actual bound port, which is useful when using port 0 in tests. `start()` uses `listen_after_bind()` if `bind()` was already called, or `listen()` otherwise.
+
+### Endpoints
+
+All paths are under the `/v1` prefix.
+
+```text
+POST   /v1/workflow-definitions/validate
+GET    /v1/workflow-definitions
+POST   /v1/workflow-definitions
+POST   /v1/workflow-executions
+GET    /v1/workflow-executions/{id}
+DELETE /v1/workflow-executions/{id}
+POST   /v1/workflow-step-executions/poll-and-claim
+POST   /v1/workflow-step-executions/keep-alive
+POST   /v1/workflow-step-executions/complete
+POST   /v1/workflow-step-executions/fail
+```
+
+### Timestamps
+
+All timestamps are ISO 8601 strings in UTC (e.g. `2026-05-05T14:32:00.123Z`). The internal C++ model uses `std::chrono::system_clock::time_point`; conversion happens at the HTTP boundary.
+
+### Errors
+
+Errors use RFC 9457 Problem Details with content type `application/problem+json`.
+
+```json
+{
+  "type": "not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "workflow execution not found: wfexec-42"
+}
+```
+
+Exception-to-status mapping:
+
+```text
+JsonParseError          → 400 invalid-argument
+std::invalid_argument   → 400 invalid-argument
+std::runtime_error (message contains "not found") → 404 not-found
+std::runtime_error (other)  → 409 conflict
+std::exception (other)      → 500 internal-error
+```
+
+## OpenAPI specification
+
+The full API contract is specified in:
+
+```text
+api/openapi.yaml
+```
+
+The spec is OpenAPI 3.1.0 and covers all ten endpoints, all request and response schemas, and all error responses.
+
 ## Future backend layout
 
 Additional backends should follow this layout:
 
 ```text
-include/wf/backend/sqlite/
-src/backend/sqlite/
-
 include/wf/backend/postgres/
 src/backend/postgres/
 
@@ -626,7 +778,7 @@ include/wf/backend/rocksdb/
 src/backend/rocksdb/
 ```
 
-The core framework should depend on store interfaces, not backend-specific classes.
+The core framework depends only on store interfaces, not backend-specific classes.
 
 ## wf CLI
 
@@ -854,6 +1006,9 @@ Implemented:
 - in-memory definition store
 - in-memory execution store
 - in-memory step execution store
+- SQLite definition store
+- SQLite execution store
+- SQLite step execution store
 - atomic `pollAndClaim`
 - internal lease duration calculation from `WorkflowStep.expectedExecutionTime`
 - lease expiration and reclaim behavior
@@ -861,41 +1016,40 @@ Implemented:
 - background lease sweep thread in `WorkflowService`
 - per-execution striped locking in `WorkflowOrchestrator`
 - workflow and step cancellation
+- HTTP REST API server (`WorkflowHttpServer`) with all ten endpoints
+- OpenAPI 3.1 specification (`api/openapi.yaml`)
+- RFC 9457 Problem Details error responses
+- ISO 8601 timestamps at the HTTP boundary
 - `wf` CLI (`validate`, `parse` subcommands)
 - example workflow definition (`examples/order-processing-workflow.json`)
 - `-MMD -MP` header dependency tracking
 - parser tests
 - duration tests
 - memory backend tests
+- SQLite backend tests
 - lease tests
 - orchestrator tests
 - service tests
+- HTTP server tests
 - PlantUML architecture and sequence diagrams
 - wildcard Makefile
 
 ## Recommended next steps
 
-1. Add HTTP API layer:
+1. Add `WorkflowClient` with a pluggable transport interface so callers work the same way regardless of whether they connect in-process or over HTTP:
    ```text
-   POST /v1/workflow-executions
-   POST /v1/workflow-step-executions/poll-and-claim
-   POST /v1/workflow-step-executions/keep-alive
-   POST /v1/workflow-step-executions/complete
-   POST /v1/workflow-step-executions/fail
-   DELETE /v1/workflow-executions/{id}
-   GET /v1/workflow-executions/{id}
-   GET /v1/workflow-definitions
+   IWorkflowTransport   (pure interface)
+   InProcessTransport   (wraps WorkflowService directly)
+   HttpTransport        (calls WorkflowHttpServer over HTTP)
+   WorkflowClient       (uses IWorkflowTransport)
    ```
 
-2. Add persistent backends:
-   ```text
-   SQLite
-   RocksDB
-   Postgres
+2. Add `wf serve` CLI subcommand:
+   ```bash
+   wf serve --port 8080 --db /path/to/wf.db
    ```
+   Wires up the SQLite backend, `WorkflowOrchestrator`, `WorkflowService`, and `WorkflowHttpServer`.
 
 3. Add scripted `WorkflowLogic` driven from the workflow definition JSON (linear step transition table).
 
-4. Add `wf run` CLI subcommand to execute a workflow end-to-end with a scripted logic driver.
-
-5. Update PlantUML diagrams to reflect the current architecture (background sweep, striped locking, timestamps).
+4. Update PlantUML diagrams to reflect the current architecture (HTTP server, SQLite backend, background sweep, striped locking, timestamps).
