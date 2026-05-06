@@ -614,22 +614,34 @@ int main(
     }
 
     if (command == "serve")
+    {
         return cmdServe(argc - 2, argv + 2);
+    }
 
     if (command == "register")
+    {
         return cmdRegister(argc - 2, argv + 2);
+    }
 
     if (command == "list")
+    {
         return cmdList(argc - 2, argv + 2);
+    }
 
     if (command == "start")
+    {
         return cmdStart(argc - 2, argv + 2);
+    }
 
     if (command == "get")
+    {
         return cmdGet(argc - 2, argv + 2);
+    }
 
     if (command == "cancel")
+    {
         return cmdCancel(argc - 2, argv + 2);
+    }
 
     std::cerr << "error: unknown command: " << command << "\n\n";
     printUsage(argv[0]);

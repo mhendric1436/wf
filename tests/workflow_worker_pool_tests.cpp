@@ -138,7 +138,9 @@ struct PoolTestContext
                 client.getWorkflowExecution(GetWorkflowExecutionRequest{.workflowExecutionId = id});
             if (res.execution.has_value() &&
                 res.execution->status != WorkflowExecutionStatus::Running)
+            {
                 return *res.execution;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         throw std::runtime_error("execution did not finish within timeout");
@@ -236,7 +238,9 @@ TEST_CASE("WorkflowWorkerPool executes steps concurrently across multiple execut
 
     std::vector<std::string> ids;
     for (int i = 0; i < 8; ++i)
+    {
         ids.push_back(ctx.startFulfill());
+    }
 
     WorkflowWorkerPool pool(
         ctx.client, {WorkflowDefinitionKey{.workflowName = "fulfillOrder", .workflowVersion = 1}},
@@ -259,7 +263,9 @@ TEST_CASE("WorkflowWorkerPool tracks concurrency: active steps never exceed thre
 
     std::vector<std::string> ids;
     for (int i = 0; i < 8; ++i)
+    {
         ids.push_back(ctx.startFulfill());
+    }
 
     const std::size_t threadCount = 3;
     std::atomic<int> activeSteps{0};
@@ -287,7 +293,9 @@ TEST_CASE("WorkflowWorkerPool tracks concurrency: active steps never exceed thre
     pool.start();
 
     for (const auto& id : ids)
+    {
         ctx.waitForCompletion(id);
+    }
     pool.stop();
 
     REQUIRE(maxObservedActive.load() <= static_cast<int>(threadCount));

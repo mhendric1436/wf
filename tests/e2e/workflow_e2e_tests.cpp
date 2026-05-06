@@ -155,7 +155,9 @@ struct E2ETestContext
             );
             if (res.execution.has_value() &&
                 res.execution->status != WorkflowExecutionStatus::Running)
+            {
                 return *res.execution;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         throw std::runtime_error("execution did not finish within timeout");
@@ -353,7 +355,9 @@ TEST_CASE("e2e: multiple executions complete concurrently over HTTP")
 
     std::vector<std::string> ids;
     for (int i = 0; i < 8; ++i)
+    {
         ids.push_back(ctx.startFulfill());
+    }
 
     WorkflowWorkerPool pool(
         ctx.poolClient,
@@ -364,7 +368,9 @@ TEST_CASE("e2e: multiple executions complete concurrently over HTTP")
     pool.start();
 
     for (const auto& id : ids)
+    {
         REQUIRE(ctx.waitForCompletion(id).status == WorkflowExecutionStatus::Completed);
+    }
 
     pool.stop();
 }
@@ -376,7 +382,9 @@ TEST_CASE("e2e: concurrent steps never exceed threadCount")
 
     std::vector<std::string> ids;
     for (int i = 0; i < 8; ++i)
+    {
         ids.push_back(ctx.startFulfill());
+    }
 
     const std::size_t threadCount = 3;
     std::atomic<int> active{0};
@@ -404,7 +412,9 @@ TEST_CASE("e2e: concurrent steps never exceed threadCount")
     pool.start();
 
     for (const auto& id : ids)
+    {
         ctx.waitForCompletion(id);
+    }
     pool.stop();
 
     REQUIRE(maxActive.load() <= static_cast<int>(threadCount));
@@ -434,7 +444,9 @@ TEST_CASE("e2e: pool stop drains in-flight steps before returning")
         {
             handlerStarted = true;
             while (!handlerAllowFinish)
+            {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
             return completeOutput();
         }
     );
@@ -442,7 +454,9 @@ TEST_CASE("e2e: pool stop drains in-flight steps before returning")
 
     // Wait until the handler is running, then release it and stop concurrently.
     while (!handlerStarted)
+    {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     handlerAllowFinish = true;
     pool.stop();
 

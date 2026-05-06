@@ -61,16 +61,22 @@ struct WorkflowWorkerPool::Impl
         idleExecutors = static_cast<int>(options.threadCount);
 
         for (std::size_t i = 0; i < options.pollerCount; ++i)
+        {
             pollerThreads.emplace_back([this, i] { runPoller(i); });
+        }
 
         for (std::size_t i = 0; i < options.threadCount; ++i)
+        {
             executorThreads.emplace_back([this] { runExecutor(); });
+        }
     }
 
     void stop()
     {
         if (pollerThreads.empty() && executorThreads.empty())
+        {
             return;
+        }
 
         {
             std::lock_guard<std::mutex> lock(stateMutex);
@@ -80,18 +86,24 @@ struct WorkflowWorkerPool::Impl
         queueNotEmpty.notify_all();
 
         for (auto& t : pollerThreads)
+        {
             t.join();
+        }
         pollerThreads.clear();
 
         for (auto& t : executorThreads)
+        {
             t.join();
+        }
         executorThreads.clear();
     }
 
     void runPoller(std::size_t pollerIndex)
     {
         if (definitions.empty())
+        {
             return;
+        }
 
         const std::size_t n = definitions.size();
         std::size_t defIdx = pollerIndex % n;
@@ -111,7 +123,9 @@ struct WorkflowWorkerPool::Impl
                 {
                     std::lock_guard<std::mutex> lock(stateMutex);
                     if (idleExecutors <= 0)
+                    {
                         continue;
+                    }
                     toRequest = std::min(
                         static_cast<std::size_t>(idleExecutors), options.maxResultsPerPoll
                     );
@@ -145,15 +159,23 @@ struct WorkflowWorkerPool::Impl
                     // Return any over-claimed slots.
                     idleExecutors += static_cast<int>(toRequest - actual);
                     for (auto& step : resp.steps)
+                    {
                         workQueue.push(std::move(step));
+                    }
                     if (actual > 0)
+                    {
                         queueNotEmpty.notify_all();
+                    }
                     if (toRequest > actual)
+                    {
                         slotsAvailable.notify_one();
+                    }
                 }
 
                 if (actual > 0)
+                {
                     foundWork = true;
+                }
             }
 
             if (!foundWork && !stopping)
@@ -175,7 +197,9 @@ struct WorkflowWorkerPool::Impl
                 std::unique_lock<std::mutex> lock(stateMutex);
                 queueNotEmpty.wait(lock, [this] { return !workQueue.empty() || stopping.load(); });
                 if (workQueue.empty())
+                {
                     return;
+                }
                 step = std::move(workQueue.front());
                 workQueue.pop();
             }

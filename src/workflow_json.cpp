@@ -398,24 +398,38 @@ json::Value toJson(const WorkflowStepExecution& step)
 WorkflowExecutionStatus executionStatusFromString(const std::string& s)
 {
     if (s == "Completed")
+    {
         return WorkflowExecutionStatus::Completed;
+    }
     if (s == "Failed")
+    {
         return WorkflowExecutionStatus::Failed;
+    }
     if (s == "Canceled")
+    {
         return WorkflowExecutionStatus::Canceled;
+    }
     return WorkflowExecutionStatus::Running;
 }
 
 StepExecutionStatus stepStatusFromString(const std::string& s)
 {
     if (s == "Running")
+    {
         return StepExecutionStatus::Running;
+    }
     if (s == "Completed")
+    {
         return StepExecutionStatus::Completed;
+    }
     if (s == "Failed")
+    {
         return StepExecutionStatus::Failed;
+    }
     if (s == "Canceled")
+    {
         return StepExecutionStatus::Canceled;
+    }
     return StepExecutionStatus::Pending;
 }
 
@@ -440,13 +454,19 @@ WorkflowExecution workflowExecutionFromJson(const json::Value& v)
     exec.currentStepAttempt = v.at(kCurrentStepAttempt).asInt();
 
     if (v.contains(kFailureReason) && !v.at(kFailureReason).isNull())
+    {
         exec.failureReason = v.at(kFailureReason).asString();
+    }
 
     if (v.contains(kStartedAt) && !v.at(kStartedAt).isNull())
+    {
         exec.startedAt = fromIso8601(v.at(kStartedAt).asString());
+    }
 
     if (v.contains(kCompletedAt) && !v.at(kCompletedAt).isNull())
+    {
         exec.completedAt = fromIso8601(v.at(kCompletedAt).asString());
+    }
 
     return exec;
 }
@@ -462,31 +482,49 @@ WorkflowStepExecution workflowStepExecutionFromJson(const json::Value& v)
     step.status = stepStatusFromString(v.at(kStatus).asString());
 
     if (v.contains(kWorkerId) && !v.at(kWorkerId).isNull())
+    {
         step.workerId = v.at(kWorkerId).asString();
+    }
 
     if (v.contains(kLeaseExpiresAt) && !v.at(kLeaseExpiresAt).isNull())
+    {
         step.leaseExpiresAt = fromIso8601(v.at(kLeaseExpiresAt).asString());
+    }
 
     if (v.contains(kFailureReason) && !v.at(kFailureReason).isNull())
+    {
         step.failureReason = v.at(kFailureReason).asString();
+    }
 
     if (v.contains(kCreatedAt) && !v.at(kCreatedAt).isNull())
+    {
         step.createdAt = fromIso8601(v.at(kCreatedAt).asString());
+    }
 
     if (v.contains(kStartedAt) && !v.at(kStartedAt).isNull())
+    {
         step.startedAt = fromIso8601(v.at(kStartedAt).asString());
+    }
 
     if (v.contains(kCompletedAt) && !v.at(kCompletedAt).isNull())
+    {
         step.completedAt = fromIso8601(v.at(kCompletedAt).asString());
+    }
 
     if (v.contains(kInput))
+    {
         step.input = v.at(kInput);
+    }
 
     if (v.contains(kState))
+    {
         step.state = v.at(kState);
+    }
 
     if (v.contains(kOutput))
+    {
         step.output = v.at(kOutput);
+    }
 
     return step;
 }
