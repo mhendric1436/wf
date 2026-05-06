@@ -1,10 +1,8 @@
+#include "mt/backends/sqlite.hpp"
+#include "mt/database.hpp"
 #include "mt/errors.hpp"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
-#include "wf/backend/sqlite/sqlite_database.hpp"
-#include "wf/backend/sqlite/sqlite_workflow_definition_store.hpp"
-#include "wf/backend/sqlite/sqlite_workflow_execution_store.hpp"
-#include "wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/http_transport.hpp"
@@ -524,15 +522,11 @@ int cmdServe(
 
     try
     {
-        workflow::backend::sqlite::SQLiteDatabase db(dbPath);
-        workflow::backend::sqlite::SQLiteWorkflowDefinitionStore definitionStore(db);
-        workflow::backend::sqlite::SQLiteWorkflowExecutionStore executionStore(db);
-        workflow::backend::sqlite::SQLiteWorkflowStepExecutionStore stepExecutionStore(db);
+        auto backend = std::make_shared<mt::backends::sqlite::SqliteBackend>(dbPath);
+        mt::Database database(backend);
 
         workflow::logic::StepOutputRoutingLogic logic;
-        workflow::WorkflowOrchestrator orchestrator(
-            definitionStore, executionStore, stepExecutionStore, logic
-        );
+        workflow::WorkflowOrchestrator orchestrator(database, logic);
         workflow::WorkflowService service(orchestrator);
         workflow::http::WorkflowHttpServer server(service, port);
 

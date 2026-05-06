@@ -1,9 +1,8 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/backends/memory.hpp"
+#include "mt/database.hpp"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
-#include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/transport/in_process_transport.hpp"
 #include "wf/workflow_client.hpp"
 #include "wf/workflow_logic.hpp"
@@ -34,9 +33,6 @@ using workflow::WorkflowExecutionStatus;
 using workflow::WorkflowLogic;
 using workflow::WorkflowOrchestrator;
 using workflow::WorkflowService;
-using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
-using workflow::backend::memory::InMemoryWorkflowExecutionStore;
-using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 using workflow::transport::InProcessTransport;
 
 namespace
@@ -104,9 +100,9 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
 
 struct TestContext
 {
-    InMemoryWorkflowDefinitionStore definitionStore;
-    InMemoryWorkflowExecutionStore executionStore;
-    InMemoryWorkflowStepExecutionStore stepExecutionStore;
+    std::shared_ptr<mt::backends::memory::MemoryBackend> backend =
+        std::make_shared<mt::backends::memory::MemoryBackend>();
+    mt::Database database{backend};
     ScriptedWorkflowLogic logic;
     WorkflowOrchestrator orchestrator;
     WorkflowService service;
@@ -115,9 +111,7 @@ struct TestContext
     explicit TestContext(std::vector<NextStepDecision> decisions = {})
         : logic(std::move(decisions)),
           orchestrator(
-              definitionStore,
-              executionStore,
-              stepExecutionStore,
+              database,
               logic
           ),
           service(orchestrator),

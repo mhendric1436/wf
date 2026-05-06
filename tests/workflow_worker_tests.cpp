@@ -1,9 +1,8 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/backends/memory.hpp"
+#include "mt/database.hpp"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
-#include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/in_process_transport.hpp"
 #include "wf/workflow_client.hpp"
@@ -28,9 +27,6 @@ using workflow::WorkflowOrchestrator;
 using workflow::WorkflowService;
 using workflow::WorkflowStepExecution;
 using workflow::WorkflowWorker;
-using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
-using workflow::backend::memory::InMemoryWorkflowExecutionStore;
-using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 using workflow::logic::StepOutputRoutingLogic;
 using workflow::transport::InProcessTransport;
 
@@ -60,9 +56,9 @@ WorkflowWorker::Options fastOptions()
 
 struct WorkerTestContext
 {
-    InMemoryWorkflowDefinitionStore definitionStore;
-    InMemoryWorkflowExecutionStore executionStore;
-    InMemoryWorkflowStepExecutionStore stepExecutionStore;
+    std::shared_ptr<mt::backends::memory::MemoryBackend> backend =
+        std::make_shared<mt::backends::memory::MemoryBackend>();
+    mt::Database database{backend};
     StepOutputRoutingLogic logic;
     WorkflowOrchestrator orchestrator;
     WorkflowService service;
@@ -70,9 +66,7 @@ struct WorkerTestContext
 
     WorkerTestContext()
         : orchestrator(
-              definitionStore,
-              executionStore,
-              stepExecutionStore,
+              database,
               logic
           ),
           service(orchestrator),

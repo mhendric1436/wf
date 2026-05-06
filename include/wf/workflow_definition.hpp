@@ -27,4 +27,10 @@ struct WorkflowDefinition
     std::vector<WorkflowStep> steps;
 };
 
+struct WorkflowDefinitionKey
+{
+    std::string workflowName;
+    int workflowVersion;
+};
+
 } // namespace workflow

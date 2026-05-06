@@ -1,6 +1,7 @@
 CXX := clang++
 CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -Werror -O2 -g
 MT_INCLUDE := $(HOME)/repos/mt/include
+MT_SRC_DIR := $(HOME)/repos/mt/src
 CPPFLAGS   := -Iinclude -Ithird_party -I$(MT_INCLUDE)
 
 FORMAT := clang-format
@@ -26,16 +27,27 @@ SRC := $(shell find src -name '*.cpp' | sort)
 TEST_SRC := $(shell find tests -name '*.cpp' | sort)
 CMD_SRC := $(shell find cmd -name '*.cpp' | sort)
 HEADER_FILES := $(shell find include -name '*.hpp' | sort)
+PRIVATE_HEADER_FILES := $(shell find src/tables -name '*.hpp' | sort)
+MT_SQLITE_SRC := \
+	$(MT_SRC_DIR)/backends/common/schema_codec.cpp \
+	$(MT_SRC_DIR)/backends/sqlite/sqlite_backend.cpp \
+	$(MT_SRC_DIR)/backends/sqlite/sqlite_constraints.cpp \
+	$(MT_SRC_DIR)/backends/sqlite/sqlite_document.cpp \
+	$(MT_SRC_DIR)/backends/sqlite/sqlite_schema.cpp \
+	$(MT_SRC_DIR)/backends/sqlite/sqlite_session.cpp \
+	$(MT_SRC_DIR)/backends/sqlite/sqlite_state.cpp
 
 CATCH_SRC := third_party/catch2/catch_amalgamated.cpp
 
 OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRC))
 TEST_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(TEST_SRC))
 CMD_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(CMD_SRC))
+MT_SQLITE_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(MT_SQLITE_SRC))
 CATCH_OBJ := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(CATCH_SRC))
 
 FORMAT_FILES := \
 	$(HEADER_FILES) \
+	$(PRIVATE_HEADER_FILES) \
 	$(SRC) \
 	$(TEST_SRC) \
 	$(CMD_SRC)
@@ -56,9 +68,9 @@ $(TEST_BIN): $(LIB) $(TEST_OBJ) $(CATCH_OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(TEST_OBJ) $(CATCH_OBJ) $(LIB) $(LDFLAGS)
 
-$(WF_BIN): $(LIB) $(CMD_OBJ)
+$(WF_BIN): $(LIB) $(CMD_OBJ) $(MT_SQLITE_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(CMD_OBJ) $(LIB) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $@ $(CMD_OBJ) $(LIB) $(MT_SQLITE_OBJ) $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
@@ -115,5 +127,5 @@ help:
 	@echo "  PLANTUML_FLAGS=$(PLANTUML_FLAGS)"
 	@echo "  LDFLAGS=$(LDFLAGS)"
 
-DEP_FILES := $(OBJ:.o=.d) $(TEST_OBJ:.o=.d) $(CMD_OBJ:.o=.d) $(CATCH_OBJ:.o=.d)
+DEP_FILES := $(OBJ:.o=.d) $(TEST_OBJ:.o=.d) $(CMD_OBJ:.o=.d) $(MT_SQLITE_OBJ:.o=.d) $(CATCH_OBJ:.o=.d)
 -include $(DEP_FILES)

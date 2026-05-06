@@ -237,8 +237,8 @@ namespace workflow
 std::string toIso8601(std::chrono::system_clock::time_point tp)
 {
     const auto tt = std::chrono::system_clock::to_time_t(tp);
-    const auto ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()) % 1000;
+    const auto us =
+        std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()) % 1000000;
 
     std::tm tm{};
     gmtime_r(&tt, &tm);
@@ -246,27 +246,38 @@ std::string toIso8601(std::chrono::system_clock::time_point tp)
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
 
-    char result[40];
-    std::snprintf(result, sizeof(result), "%s.%03ldZ", buf, static_cast<long>(ms.count()));
+    char result[48];
+    std::snprintf(result, sizeof(result), "%s.%06ldZ", buf, static_cast<long>(us.count()));
     return result;
 }
 
 std::chrono::system_clock::time_point fromIso8601(const std::string& s)
 {
     std::tm tm{};
-    int ms = 0;
+    char fraction[10] = {};
 
     std::sscanf(
-        s.c_str(), "%4d-%2d-%2dT%2d:%2d:%2d.%dZ", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour,
-        &tm.tm_min, &tm.tm_sec, &ms
+        s.c_str(), "%4d-%2d-%2dT%2d:%2d:%2d.%9[0-9]Z", &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+        &tm.tm_hour, &tm.tm_min, &tm.tm_sec, fraction
     );
 
     tm.tm_year -= 1900;
     tm.tm_mon -= 1;
     tm.tm_isdst = 0;
 
+    std::string fractionalPart = fraction;
+    if (fractionalPart.size() > 6)
+    {
+        fractionalPart.resize(6);
+    }
+    while (fractionalPart.size() < 6)
+    {
+        fractionalPart.push_back('0');
+    }
+
+    const int us = fractionalPart.empty() ? 0 : std::stoi(fractionalPart);
     const auto tt = timegm(&tm);
-    return std::chrono::system_clock::from_time_t(tt) + std::chrono::milliseconds(ms);
+    return std::chrono::system_clock::from_time_t(tt) + std::chrono::microseconds(us);
 }
 
 std::string toString(WorkflowExecutionStatus status)

@@ -1,9 +1,8 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/backends/memory.hpp"
+#include "mt/database.hpp"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
-#include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
 #include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/transport/http_transport.hpp"
@@ -31,9 +30,6 @@ using workflow::WorkflowOrchestrator;
 using workflow::WorkflowService;
 using workflow::WorkflowStepExecution;
 using workflow::WorkflowWorkerPool;
-using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
-using workflow::backend::memory::InMemoryWorkflowExecutionStore;
-using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 using workflow::http::WorkflowHttpServer;
 using workflow::logic::StepOutputRoutingLogic;
 using workflow::transport::HttpTransport;
@@ -71,9 +67,9 @@ const char* FULFILL_WORKFLOW_JSON = R"json(
 //   observerClient — used only from the test thread for assertions; no concurrent access
 struct E2ETestContext
 {
-    InMemoryWorkflowDefinitionStore definitionStore;
-    InMemoryWorkflowExecutionStore executionStore;
-    InMemoryWorkflowStepExecutionStore stepExecutionStore;
+    std::shared_ptr<mt::backends::memory::MemoryBackend> backend =
+        std::make_shared<mt::backends::memory::MemoryBackend>();
+    mt::Database database{backend};
     StepOutputRoutingLogic logic;
     WorkflowOrchestrator orchestrator;
     WorkflowService service;
@@ -86,9 +82,7 @@ struct E2ETestContext
 
     E2ETestContext()
         : orchestrator(
-              definitionStore,
-              executionStore,
-              stepExecutionStore,
+              database,
               logic
           ),
           service(orchestrator),

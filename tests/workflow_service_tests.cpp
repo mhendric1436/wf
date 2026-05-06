@@ -1,13 +1,13 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/backends/memory.hpp"
+#include "mt/database.hpp"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
-#include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_service.hpp"
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -30,9 +30,6 @@ using workflow::WorkflowExecutionStatus;
 using workflow::WorkflowLogic;
 using workflow::WorkflowOrchestrator;
 using workflow::WorkflowService;
-using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
-using workflow::backend::memory::InMemoryWorkflowExecutionStore;
-using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 
 namespace
 {
@@ -100,9 +97,9 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
 
 struct TestContext
 {
-    InMemoryWorkflowDefinitionStore definitionStore;
-    InMemoryWorkflowExecutionStore executionStore;
-    InMemoryWorkflowStepExecutionStore stepExecutionStore;
+    std::shared_ptr<mt::backends::memory::MemoryBackend> backend =
+        std::make_shared<mt::backends::memory::MemoryBackend>();
+    mt::Database database{backend};
     ScriptedWorkflowLogic logic;
     WorkflowOrchestrator orchestrator;
     WorkflowService service;
@@ -110,9 +107,7 @@ struct TestContext
     explicit TestContext(std::vector<NextStepDecision> decisions = {})
         : logic(std::move(decisions)),
           orchestrator(
-              definitionStore,
-              executionStore,
-              stepExecutionStore,
+              database,
               logic
           ),
           service(orchestrator)
@@ -216,7 +211,7 @@ TEST_CASE("service validate does not register the definition")
         }
     );
 
-    REQUIRE(context.definitionStore.size() == 0);
+    REQUIRE(context.orchestrator.listWorkflowDefinitions().empty());
 }
 
 TEST_CASE("service register stores and returns the definition")
@@ -233,7 +228,7 @@ TEST_CASE("service register stores and returns the definition")
     REQUIRE(response.definition.workflowVersion == 1);
     REQUIRE(response.definition.startWorkflowStepName == "validateOrder");
     REQUIRE(response.definition.steps.size() == 2);
-    REQUIRE(context.definitionStore.size() == 1);
+    REQUIRE(context.orchestrator.listWorkflowDefinitions().size() == 1);
 }
 
 TEST_CASE("service register replaces an existing definition")
@@ -250,10 +245,10 @@ TEST_CASE("service register replaces an existing definition")
         RegisterWorkflowDefinitionRequest{.definitionJson = updatedJson}
     );
 
-    const auto stored = context.definitionStore.find("orderProcessing", 1);
+    const auto stored = context.orchestrator.getWorkflowDefinition("orderProcessing", 1);
     REQUIRE(stored.has_value());
     REQUIRE(stored->expectedExecutionTime == "PT20M");
-    REQUIRE(context.definitionStore.size() == 1);
+    REQUIRE(context.orchestrator.listWorkflowDefinitions().size() == 1);
 }
 
 TEST_CASE("service register throws for invalid definition JSON")
@@ -306,8 +301,9 @@ TEST_CASE("service start creates a running execution with the initial step pendi
     REQUIRE(response.execution.currentStepName == "validateOrder");
     REQUIRE(response.execution.currentStepAttempt == 0);
 
-    const auto stepExecution =
-        context.stepExecutionStore.find(response.execution.workflowExecutionId, "validateOrder", 0);
+    const auto stepExecution = context.orchestrator.getWorkflowStepExecution(
+        response.execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(stepExecution.has_value());
     REQUIRE(stepExecution->status == StepExecutionStatus::Pending);
 }
@@ -378,7 +374,8 @@ TEST_CASE("service keep-alive extends the claimed step lease")
     const auto executionId = context.claimInitialStep("worker-001");
 
     const auto before =
-        context.stepExecutionStore.find(executionId, "validateOrder", 0)->leaseExpiresAt;
+        context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 0)
+            ->leaseExpiresAt;
 
     const auto response = context.service.keepAliveWorkflowStep(
         KeepAliveWorkflowStepRequest{
@@ -451,11 +448,13 @@ TEST_CASE("service complete advances execution to the next step")
     REQUIRE(response.execution.currentStepName == "chargePayment");
     REQUIRE(response.execution.currentStepAttempt == 0);
 
-    const auto completedStep = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    const auto completedStep =
+        context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 0);
     REQUIRE(completedStep.has_value());
     REQUIRE(completedStep->status == StepExecutionStatus::Completed);
 
-    const auto nextStep = context.stepExecutionStore.find(executionId, "chargePayment", 0);
+    const auto nextStep =
+        context.orchestrator.getWorkflowStepExecution(executionId, "chargePayment", 0);
     REQUIRE(nextStep.has_value());
     REQUIRE(nextStep->status == StepExecutionStatus::Pending);
 }
@@ -477,7 +476,7 @@ TEST_CASE("service complete marks workflow completed when logic returns complete
 
     REQUIRE(response.execution.status == WorkflowExecutionStatus::Completed);
 
-    const auto stored = context.executionStore.find(executionId);
+    const auto stored = context.orchestrator.getWorkflowExecution(executionId);
     REQUIRE(stored.has_value());
     REQUIRE(stored->status == WorkflowExecutionStatus::Completed);
 }
@@ -507,10 +506,10 @@ TEST_CASE("service complete throws after lease expiry")
     context.registerValidDefinition();
     const auto executionId = context.claimInitialStep("worker-001");
 
-    auto step = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    auto step = context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 0);
     REQUIRE(step.has_value());
     step->leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
-    context.stepExecutionStore.update(*step);
+    context.orchestrator.putWorkflowStepExecution(*step);
 
     REQUIRE_THROWS_AS(
         context.service.completeWorkflowStep(
@@ -544,12 +543,14 @@ TEST_CASE("service fail creates a retry step when retries remain")
     REQUIRE(response.execution.currentStepName == "validateOrder");
     REQUIRE(response.execution.currentStepAttempt == 1);
 
-    const auto failedStep = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    const auto failedStep =
+        context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 0);
     REQUIRE(failedStep.has_value());
     REQUIRE(failedStep->status == StepExecutionStatus::Failed);
     REQUIRE(failedStep->failureReason.value() == "upstream timeout");
 
-    const auto retryStep = context.stepExecutionStore.find(executionId, "validateOrder", 1);
+    const auto retryStep =
+        context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 1);
     REQUIRE(retryStep.has_value());
     REQUIRE(retryStep->status == StepExecutionStatus::Pending);
 }
@@ -594,7 +595,7 @@ TEST_CASE("service fail marks workflow failed when max retries are exceeded")
     REQUIRE(response.execution.failureReason.has_value());
     REQUIRE(response.execution.failureReason.value() == "permanent failure");
 
-    const auto stored = context.executionStore.find(executionId);
+    const auto stored = context.orchestrator.getWorkflowExecution(executionId);
     REQUIRE(stored.has_value());
     REQUIRE(stored->status == WorkflowExecutionStatus::Failed);
 }
@@ -753,11 +754,12 @@ TEST_CASE("service cancel marks workflow canceled and cancels pending step")
     REQUIRE(response.execution.status == WorkflowExecutionStatus::Canceled);
     REQUIRE(response.execution.workflowExecutionId == executionId);
 
-    const auto stored = context.executionStore.find(executionId);
+    const auto stored = context.orchestrator.getWorkflowExecution(executionId);
     REQUIRE(stored.has_value());
     REQUIRE(stored->status == WorkflowExecutionStatus::Canceled);
 
-    const auto step = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    const auto step =
+        context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 0);
     REQUIRE(step.has_value());
     REQUIRE(step->status == StepExecutionStatus::Canceled);
 }
@@ -773,7 +775,8 @@ TEST_CASE("service cancel marks workflow canceled and cancels running step")
 
     REQUIRE(response.execution.status == WorkflowExecutionStatus::Canceled);
 
-    const auto step = context.stepExecutionStore.find(executionId, "validateOrder", 0);
+    const auto step =
+        context.orchestrator.getWorkflowStepExecution(executionId, "validateOrder", 0);
     REQUIRE(step.has_value());
     REQUIRE(step->status == StepExecutionStatus::Canceled);
     REQUIRE_FALSE(step->workerId.has_value());

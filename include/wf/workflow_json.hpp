@@ -1,7 +1,6 @@
 #pragma once
 
 #include "mt/json.hpp"
-#include "wf/store/workflow_definition_store.hpp"
 #include "wf/workflow_definition.hpp"
 #include "wf/workflow_execution.hpp"
 #include "wf/workflow_step_execution.hpp"

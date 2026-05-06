@@ -9,12 +9,6 @@
 namespace workflow
 {
 
-struct WorkflowDefinitionKey
-{
-    std::string workflowName;
-    int workflowVersion;
-};
-
 class WorkflowDefinitionStore
 {
   public:

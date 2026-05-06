@@ -1,17 +1,14 @@
 #pragma once
 
+#include "mt/database.hpp"
 #include "mt/json.hpp"
-#include "wf/store/workflow_definition_store.hpp"
-#include "wf/store/workflow_execution_store.hpp"
-#include "wf/store/workflow_step_execution_store.hpp"
+#include "wf/workflow_definition.hpp"
 #include "wf/workflow_execution.hpp"
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_step_execution.hpp"
 
-#include <array>
 #include <cstddef>
-#include <functional>
-#include <mutex>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -29,11 +26,14 @@ class WorkflowOrchestrator
 {
   public:
     WorkflowOrchestrator(
-        WorkflowDefinitionStore& definitionStore,
-        WorkflowExecutionStore& executionStore,
-        WorkflowStepExecutionStore& stepExecutionStore,
+        mt::Database& database,
         WorkflowLogic& workflowLogic
     );
+
+    ~WorkflowOrchestrator();
+
+    WorkflowOrchestrator(const WorkflowOrchestrator&) = delete;
+    WorkflowOrchestrator& operator=(const WorkflowOrchestrator&) = delete;
 
     WorkflowExecution startWorkflow(
         const std::string& workflowName,
@@ -75,26 +75,29 @@ class WorkflowOrchestrator
     std::optional<WorkflowExecution>
     getWorkflowExecution(const std::string& workflowExecutionId) const;
 
+    WorkflowExecution putWorkflowExecution(const WorkflowExecution& execution);
+
+    std::optional<WorkflowStepExecution> getWorkflowStepExecution(
+        const std::string& workflowExecutionId,
+        const std::string& stepName,
+        int attempt
+    ) const;
+
+    WorkflowStepExecution putWorkflowStepExecution(const WorkflowStepExecution& stepExecution);
+
     std::vector<WorkflowDefinitionKey> listWorkflowDefinitions() const;
 
-    WorkflowDefinitionStore& workflowDefinitionStore();
-    const WorkflowDefinitionStore& workflowDefinitionStore() const;
+    std::optional<WorkflowDefinition> getWorkflowDefinition(
+        const std::string& workflowName,
+        int workflowVersion
+    ) const;
 
-    WorkflowExecutionStore& workflowExecutionStore();
-    const WorkflowExecutionStore& workflowExecutionStore() const;
-
-    WorkflowStepExecutionStore& workflowStepExecutionStore();
-    const WorkflowStepExecutionStore& workflowStepExecutionStore() const;
+    WorkflowDefinition registerWorkflowDefinition(const WorkflowDefinition& definition);
 
   private:
-    static constexpr std::size_t STRIPE_COUNT = 64;
+    struct Tables;
 
-    std::mutex& stripeFor(const std::string& executionId) const;
-
-    mutable std::array<std::mutex, STRIPE_COUNT> executionStripes_;
-    WorkflowDefinitionStore& definitionStore_;
-    WorkflowExecutionStore& executionStore_;
-    WorkflowStepExecutionStore& stepExecutionStore_;
+    std::unique_ptr<Tables> tables_;
     WorkflowLogic& workflowLogic_;
 };
 

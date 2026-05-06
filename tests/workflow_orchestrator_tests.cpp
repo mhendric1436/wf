@@ -1,11 +1,11 @@
 #include "catch2/catch_amalgamated.hpp"
-#include "wf/backend/memory/in_memory_workflow_definition_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_execution_store.hpp"
-#include "wf/backend/memory/in_memory_workflow_step_execution_store.hpp"
+#include "mt/backends/memory.hpp"
+#include "mt/database.hpp"
 #include "wf/workflow_logic.hpp"
 #include "wf/workflow_orchestrator.hpp"
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -22,9 +22,6 @@ using workflow::WorkflowLogic;
 using workflow::WorkflowOrchestrator;
 using workflow::WorkflowStep;
 using workflow::WorkflowStepExecution;
-using workflow::backend::memory::InMemoryWorkflowDefinitionStore;
-using workflow::backend::memory::InMemoryWorkflowExecutionStore;
-using workflow::backend::memory::InMemoryWorkflowStepExecutionStore;
 
 namespace
 {
@@ -99,9 +96,9 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
 
 struct TestContext
 {
-    InMemoryWorkflowDefinitionStore definitionStore;
-    InMemoryWorkflowExecutionStore executionStore;
-    InMemoryWorkflowStepExecutionStore stepExecutionStore;
+    std::shared_ptr<mt::backends::memory::MemoryBackend> backend =
+        std::make_shared<mt::backends::memory::MemoryBackend>();
+    mt::Database database{backend};
     ScriptedWorkflowLogic logic;
     WorkflowOrchestrator orchestrator;
 
@@ -111,13 +108,11 @@ struct TestContext
     )
         : logic(std::move(decisions)),
           orchestrator(
-              definitionStore,
-              executionStore,
-              stepExecutionStore,
+              database,
               logic
           )
     {
-        definitionStore.save(definition);
+        orchestrator.registerWorkflowDefinition(definition);
     }
 };
 
@@ -164,13 +159,15 @@ TEST_CASE("orchestrator start creates workflow execution and initial pending ste
     REQUIRE(execution.currentStepName == "validateOrder");
     REQUIRE(execution.currentStepAttempt == 0);
 
-    const auto storedExecution = context.executionStore.find(execution.workflowExecutionId);
+    const auto storedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
 
     REQUIRE(storedExecution.has_value());
     REQUIRE(storedExecution->currentStepName == "validateOrder");
 
-    const auto stepExecution =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto stepExecution = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
 
     REQUIRE(stepExecution.has_value());
     REQUIRE(stepExecution->workflowExecutionId == execution.workflowExecutionId);
@@ -197,8 +194,9 @@ TEST_CASE("orchestrator poll-and-claim claims a pending step with a lease")
     REQUIRE(claimed[0].leaseExpiresAt.has_value());
     REQUIRE(claimed[0].leaseExpiresAt.value() > std::chrono::system_clock::now());
 
-    const auto storedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto storedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
 
     REQUIRE(storedStep.has_value());
     REQUIRE(storedStep->status == StepExecutionStatus::Running);
@@ -247,8 +245,9 @@ TEST_CASE("orchestrator complete step with active lease advances to next pending
     REQUIRE(context.logic.lastContext.has_value());
     REQUIRE(context.logic.lastContext->completedStepName == "validateOrder");
 
-    const auto completedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto completedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
 
     REQUIRE(completedStep.has_value());
     REQUIRE(completedStep->status == StepExecutionStatus::Completed);
@@ -257,8 +256,9 @@ TEST_CASE("orchestrator complete step with active lease advances to next pending
     );
     REQUIRE(completedStep->output.at("valid").as_bool());
 
-    const auto nextStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "chargePayment", 0);
+    const auto nextStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "chargePayment", 0
+    );
 
     REQUIRE(nextStep.has_value());
     REQUIRE(nextStep->status == StepExecutionStatus::Pending);
@@ -270,13 +270,14 @@ TEST_CASE("orchestrator rejects complete after lease expiry")
     const auto execution = startWorkflow(context);
     claimStartStep(context, "worker-001");
 
-    auto claimedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    auto claimedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
 
     REQUIRE(claimedStep.has_value());
 
     claimedStep->leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
-    context.stepExecutionStore.update(*claimedStep);
+    context.orchestrator.putWorkflowStepExecution(*claimedStep);
 
     REQUIRE_THROWS_AS(
         context.orchestrator.completeStep(
@@ -301,16 +302,18 @@ TEST_CASE("orchestrator fail step with active lease creates retry pending step")
     REQUIRE(updatedExecution.currentStepName == "validateOrder");
     REQUIRE(updatedExecution.currentStepAttempt == 1);
 
-    const auto failedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto failedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
 
     REQUIRE(failedStep.has_value());
     REQUIRE(failedStep->status == StepExecutionStatus::Failed);
     REQUIRE(failedStep->failureReason.has_value());
     REQUIRE(failedStep->failureReason.value() == "validation service timeout");
 
-    const auto retryStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 1);
+    const auto retryStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 1
+    );
 
     REQUIRE(retryStep.has_value());
     REQUIRE(retryStep->status == StepExecutionStatus::Pending);
@@ -330,13 +333,15 @@ TEST_CASE("orchestrator max retries exceeded marks workflow failed")
     REQUIRE(updatedExecution.failureReason.has_value());
     REQUIRE(updatedExecution.failureReason.value() == "validation failed");
 
-    const auto storedExecution = context.executionStore.find(execution.workflowExecutionId);
+    const auto storedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
 
     REQUIRE(storedExecution.has_value());
     REQUIRE(storedExecution->status == WorkflowExecutionStatus::Failed);
 
-    const auto failedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto failedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
 
     REQUIRE(failedStep.has_value());
     REQUIRE(failedStep->status == StepExecutionStatus::Failed);
@@ -355,7 +360,8 @@ TEST_CASE("orchestrator completes workflow when workflow logic returns complete 
     REQUIRE(updatedExecution.status == WorkflowExecutionStatus::Completed);
     REQUIRE(context.logic.callCount == 1);
 
-    const auto storedExecution = context.executionStore.find(execution.workflowExecutionId);
+    const auto storedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
 
     REQUIRE(storedExecution.has_value());
     REQUIRE(storedExecution->status == WorkflowExecutionStatus::Completed);
@@ -400,9 +406,11 @@ void expireLease(
     int attempt
 )
 {
-    auto step = context.stepExecutionStore.find(workflowExecutionId, stepName, attempt).value();
+    auto step =
+        context.orchestrator.getWorkflowStepExecution(workflowExecutionId, stepName, attempt)
+            .value();
     step.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
-    context.stepExecutionStore.update(step);
+    context.orchestrator.putWorkflowStepExecution(step);
 }
 
 } // namespace
@@ -430,19 +438,22 @@ TEST_CASE("sweepExpiredLeases retries expired step when attempts remain")
     REQUIRE(result.retriedCount == 1);
     REQUIRE(result.failedCount == 0);
 
-    const auto failedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto failedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(failedStep.has_value());
     REQUIRE(failedStep->status == StepExecutionStatus::Failed);
     REQUIRE(failedStep->failureReason == "lease expired");
     REQUIRE_FALSE(failedStep->leaseExpiresAt.has_value());
 
-    const auto retryStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 1);
+    const auto retryStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 1
+    );
     REQUIRE(retryStep.has_value());
     REQUIRE(retryStep->status == StepExecutionStatus::Pending);
 
-    const auto updatedExecution = context.executionStore.find(execution.workflowExecutionId);
+    const auto updatedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
     REQUIRE(updatedExecution.has_value());
     REQUIRE(updatedExecution->status == WorkflowExecutionStatus::Running);
     REQUIRE(updatedExecution->currentStepAttempt == 1);
@@ -460,12 +471,14 @@ TEST_CASE("sweepExpiredLeases fails workflow when no retries remain")
     REQUIRE(result.retriedCount == 0);
     REQUIRE(result.failedCount == 1);
 
-    const auto failedStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto failedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(failedStep.has_value());
     REQUIRE(failedStep->status == StepExecutionStatus::Failed);
 
-    const auto updatedExecution = context.executionStore.find(execution.workflowExecutionId);
+    const auto updatedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
     REQUIRE(updatedExecution.has_value());
     REQUIRE(updatedExecution->status == WorkflowExecutionStatus::Failed);
     REQUIRE(updatedExecution->failureReason == "lease expired");
@@ -493,13 +506,16 @@ TEST_CASE("sweepExpiredLeases skips step whose workflow execution is not running
     claimStartStep(context);
 
     auto runningStep =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0).value();
+        context.orchestrator
+            .getWorkflowStepExecution(execution.workflowExecutionId, "validateOrder", 0)
+            .value();
     runningStep.leaseExpiresAt = std::chrono::system_clock::now() - std::chrono::seconds{1};
-    context.stepExecutionStore.update(runningStep);
+    context.orchestrator.putWorkflowStepExecution(runningStep);
 
-    auto canceledExecution = context.executionStore.find(execution.workflowExecutionId).value();
+    auto canceledExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId).value();
     canceledExecution.status = WorkflowExecutionStatus::Canceled;
-    context.executionStore.update(canceledExecution);
+    context.orchestrator.putWorkflowExecution(canceledExecution);
 
     const auto result = context.orchestrator.sweepExpiredLeases();
 
@@ -514,8 +530,9 @@ TEST_CASE("startWorkflow creates initial step with createdAt set")
     const auto execution = startWorkflow(context);
     const auto after = std::chrono::system_clock::now();
 
-    const auto step =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto step = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(step.has_value());
     REQUIRE(step->createdAt.has_value());
     REQUIRE(step->createdAt.value() >= before);
@@ -531,8 +548,9 @@ TEST_CASE("pollAndClaim sets startedAt on claimed step")
     claimStartStep(context);
     const auto after = std::chrono::system_clock::now();
 
-    const auto step =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto step = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(step.has_value());
     REQUIRE(step->startedAt.has_value());
     REQUIRE(step->startedAt.value() >= before);
@@ -551,8 +569,9 @@ TEST_CASE("completeStep sets completedAt on step execution")
     );
     const auto after = std::chrono::system_clock::now();
 
-    const auto step =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto step = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(step.has_value());
     REQUIRE(step->completedAt.has_value());
     REQUIRE(step->completedAt.value() >= before);
@@ -571,8 +590,9 @@ TEST_CASE("failStep sets completedAt on step execution")
     );
     const auto after = std::chrono::system_clock::now();
 
-    const auto step =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto step = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(step.has_value());
     REQUIRE(step->completedAt.has_value());
     REQUIRE(step->completedAt.value() >= before);
@@ -590,8 +610,9 @@ TEST_CASE("sweepExpiredLeases sets completedAt on the failed step")
     context.orchestrator.sweepExpiredLeases();
     const auto after = std::chrono::system_clock::now();
 
-    const auto step =
-        context.stepExecutionStore.find(execution.workflowExecutionId, "validateOrder", 0);
+    const auto step = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
     REQUIRE(step.has_value());
     REQUIRE(step->completedAt.has_value());
     REQUIRE(step->completedAt.value() >= before);
@@ -610,7 +631,7 @@ TEST_CASE("startWorkflow sets startedAt on workflow execution")
     REQUIRE(execution.startedAt.value() >= before);
     REQUIRE(execution.startedAt.value() <= after);
 
-    const auto stored = context.executionStore.find(execution.workflowExecutionId);
+    const auto stored = context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
     REQUIRE(stored->startedAt.has_value());
     REQUIRE(stored->startedAt.value() == execution.startedAt.value());
 }
@@ -702,7 +723,7 @@ TEST_CASE("sweepExpiredLeases sets completedAt on workflow execution when failed
     context.orchestrator.sweepExpiredLeases();
     const auto after = std::chrono::system_clock::now();
 
-    const auto stored = context.executionStore.find(execution.workflowExecutionId);
+    const auto stored = context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
     REQUIRE(stored->completedAt.has_value());
     REQUIRE(stored->completedAt.value() >= before);
     REQUIRE(stored->completedAt.value() <= after);

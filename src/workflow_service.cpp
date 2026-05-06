@@ -53,7 +53,7 @@ WorkflowService::registerWorkflowDefinition(const RegisterWorkflowDefinitionRequ
 {
     WorkflowDefinition definition = parseWorkflowDefinition(request.definitionJson);
 
-    orchestrator_.workflowDefinitionStore().save(definition);
+    definition = orchestrator_.registerWorkflowDefinition(definition);
 
     return RegisterWorkflowDefinitionResponse{
         .definition = definition,
