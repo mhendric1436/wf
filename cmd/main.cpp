@@ -4,7 +4,7 @@
 #include "wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp"
 #include "wf/http/workflow_http_server.hpp"
 #include "wf/json.hpp"
-#include "wf/logic/sequential_workflow_logic.hpp"
+#include "wf/logic/step_output_routing_logic.hpp"
 #include "wf/workflow_json.hpp"
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_service.hpp"
@@ -183,7 +183,7 @@ int cmdServe(
         workflow::backend::sqlite::SQLiteWorkflowExecutionStore executionStore(db);
         workflow::backend::sqlite::SQLiteWorkflowStepExecutionStore stepExecutionStore(db);
 
-        workflow::logic::SequentialWorkflowLogic logic(definitionStore);
+        workflow::logic::StepOutputRoutingLogic logic;
         workflow::WorkflowOrchestrator orchestrator(
             definitionStore, executionStore, stepExecutionStore, logic
         );
