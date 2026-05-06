@@ -19,33 +19,51 @@ participant "StepHandler\n(user lambda)" as Handler #White
 
 == Pool start() ==
 
-[-> Poller : spawn (pollerCount threads,\neach starts at definitions[i % N])
+[-> Poller : spawn (pollerCount threads)
+note over Poller
+  Each poller builds a **disjoint subset** at startup:
+  poller i owns definitions[i], definitions[i+P],
+  definitions[i+2P], … (stride = pollerCount P).
+  No two pollers ever compete for the same definition.
+  Pollers with an empty subset exit immediately.
+end note
 [-> Executor : spawn (threadCount threads)
 note over State
   idleExecutors = threadCount
   workQueue = empty
 end note
 
-== Poller cycle: slot-based back-pressure ==
+== Poller cycle: fair polling (interleaved stride + per-cycle shuffle) ==
 
 loop while !stopping
-    Poller -> State : lock(stateMutex)\nread idleExecutors
-    alt idleExecutors == 0
-        State --> Poller : wait on slotsAvailable CV\n(woken by executor finishing)
-    else idleExecutors > 0
-        Poller -> State : toRequest = min(idleExecutors,\n  maxResultsPerPoll)\nidleExecutors -= toRequest\nunlock
-        note over Poller, State #E8F5E9
-          Speculative decrement prevents
-          over-claiming across multiple pollers.
-          Unused slots are returned after poll.
-        end note
-        Poller -> Client : lock(clientMutex)\npollAndClaimWorkflowSteps(\n  {def, workerId, toRequest})
-        Client -> Server : HTTP POST /poll-and-claim
-        Server --> Client : steps[0..actual]
-        Client --> Poller : unlock(clientMutex)\nreturn steps
-        Poller -> State : lock(stateMutex)\nidleExecutors += (toRequest - actual)\npush steps → workQueue\nnotify queueNotEmpty CV\nnotify slotsAvailable if slots returned\nunlock
+    Poller -> Poller : shuffle(subset, mt19937)\n— randomises iteration order each cycle
+    note over Poller #E8F5E9
+      Per-cycle shuffle eliminates fixed-origin
+      bias within a poller's own subset.
+      Combined with disjoint stride assignment,
+      every definition gets statistically equal
+      polling opportunity across all pollers.
+    end note
+
+    loop for each defIdx in shuffled subset
+        alt idleExecutors == 0
+            Poller -> Poller : skip definition\n(no slots; try next in subset)
+        else idleExecutors > 0
+            Poller -> State : lock(stateMutex)\ntoRequest = min(idleExecutors,\n  maxResultsPerPoll)\nidleExecutors -= toRequest\nunlock
+            note over Poller, State #E8F5E9
+              Speculative decrement prevents
+              over-claiming across multiple pollers.
+              Unused slots are returned after poll.
+            end note
+            Poller -> Client : lock(clientMutex)\npollAndClaimWorkflowSteps(\n  {def, workerId, toRequest})
+            Client -> Server : HTTP POST /poll-and-claim
+            Server --> Client : steps[0..actual]
+            Client --> Poller : unlock(clientMutex)\nreturn steps
+            Poller -> State : lock(stateMutex)\nidleExecutors += (toRequest - actual)\npush steps → workQueue\nnotify queueNotEmpty CV\nnotify slotsAvailable if slots returned\nunlock
+        end
     end
-    alt actual == 0
+
+    alt no work found this cycle && !stopping
         Poller -> Poller : wait_for(slotsAvailable CV,\n  pollInterval)\n(woken early if slots freed)
     end
 end
