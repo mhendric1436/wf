@@ -1,8 +1,8 @@
 #include "wf/http/workflow_http_server.hpp"
 
 #include "httplib/httplib.h"
-#include "wf/http/workflow_json.hpp"
 #include "wf/json.hpp"
+#include "wf/workflow_json.hpp"
 
 #include <stdexcept>
 #include <string>

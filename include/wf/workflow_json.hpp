@@ -10,7 +10,7 @@
 #include <chrono>
 #include <string>
 
-namespace workflow::http
+namespace workflow
 {
 
 std::string toIso8601(std::chrono::system_clock::time_point tp);
@@ -26,4 +26,4 @@ json::Value toJson(const WorkflowExecution& exec);
 json::Value toJson(const WorkflowStepExecution& step);
 json::Value toJson(const ValidationResult& result);
 
-} // namespace workflow::http
+} // namespace workflow

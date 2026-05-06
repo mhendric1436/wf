@@ -1,4 +1,4 @@
-#include "wf/http/workflow_json.hpp"
+#include "wf/workflow_json.hpp"
 
 #include <cstdio>
 #include <ctime>
@@ -33,7 +33,7 @@ constexpr const char* kWorkflowVersion = "workflowVersion";
 
 } // namespace
 
-namespace workflow::http
+namespace workflow
 {
 
 std::string toIso8601(std::chrono::system_clock::time_point tp)
@@ -216,4 +216,4 @@ json::Value toJson(const ValidationResult& result)
     return json::Value(std::move(obj));
 }
 
-} // namespace workflow::http
+} // namespace workflow
