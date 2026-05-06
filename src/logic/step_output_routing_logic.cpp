@@ -8,9 +8,12 @@ NextStepDecision StepOutputRoutingLogic::decideNextStep(const StepCompletionCont
     if (context.stepOutput.contains("nextStep") && context.stepOutput.at("nextStep").isString() &&
         !context.stepOutput.at("nextStep").asString().empty())
     {
+        json::Value nextInput = context.stepOutput;
+        nextInput.erase("nextStep");
         return NextStepDecision{
             .workflowComplete = false,
             .nextStepName = context.stepOutput.at("nextStep").asString(),
+            .nextStepInput = std::move(nextInput),
         };
     }
 

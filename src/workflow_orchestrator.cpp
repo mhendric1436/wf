@@ -170,7 +170,8 @@ buildLeaseDurationsByStepName(const WorkflowDefinition& definition)
 WorkflowStepExecution makeStepExecution(
     const WorkflowExecution& execution,
     const std::string& stepName,
-    int attempt
+    int attempt,
+    const json::Value& input
 )
 {
     WorkflowStepExecution stepExecution;
@@ -180,7 +181,7 @@ WorkflowStepExecution makeStepExecution(
     stepExecution.stepName = stepName;
     stepExecution.attempt = attempt;
     stepExecution.status = StepExecutionStatus::Pending;
-    stepExecution.input = execution.input;
+    stepExecution.input = input;
     stepExecution.state = execution.state;
     stepExecution.output = json::Value::object();
     stepExecution.createdAt = std::chrono::system_clock::now();
@@ -235,7 +236,9 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
 
     executionStore_.save(execution);
 
-    stepExecutionStore_.save(makeStepExecution(execution, definition->startWorkflowStepName, 0));
+    stepExecutionStore_.save(
+        makeStepExecution(execution, definition->startWorkflowStepName, 0, execution.input)
+    );
 
     return execution;
 }
@@ -403,7 +406,9 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
 
     executionStore_.update(updatedExecution);
 
-    stepExecutionStore_.save(makeStepExecution(updatedExecution, nextStepName, 0));
+    stepExecutionStore_.save(
+        makeStepExecution(updatedExecution, nextStepName, 0, decision.nextStepInput)
+    );
 
     return updatedExecution;
 }
@@ -470,9 +475,10 @@ WorkflowExecution WorkflowOrchestrator::failStep(
 
         executionStore_.update(updatedExecution);
 
-        stepExecutionStore_.save(
-            makeStepExecution(updatedExecution, stepName, updatedExecution.currentStepAttempt)
-        );
+        stepExecutionStore_.save(makeStepExecution(
+            updatedExecution, stepName, updatedExecution.currentStepAttempt,
+            updatedStepExecution.input
+        ));
 
         return updatedExecution;
     }
@@ -564,7 +570,8 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
             ++updatedExecution.currentStepAttempt;
             executionStore_.update(updatedExecution);
             stepExecutionStore_.save(makeStepExecution(
-                updatedExecution, expiredStep.stepName, updatedExecution.currentStepAttempt
+                updatedExecution, expiredStep.stepName, updatedExecution.currentStepAttempt,
+                expiredStep.input
             ));
             ++sweepResult.retriedCount;
         }

@@ -410,6 +410,50 @@ TEST_CASE("WorkflowWorkerPool serves minority definition despite heavy backlog o
     pool.stop();
 }
 
+TEST_CASE("WorkflowWorkerPool threads step output as input to the next step")
+{
+    PoolTestContext ctx;
+    const auto id = ctx.startOrder();
+
+    Value capturedInput = Value::object();
+
+    WorkflowWorkerPool pool(
+        ctx.client,
+        {WorkflowDefinitionKey{.workflowName = "orderProcessing", .workflowVersion = 1}},
+        "pool-001", fastPoolOptions()
+    );
+    pool.registerStep(
+        "validateOrder",
+        [](const WorkflowStepExecution&) -> Value
+        {
+            Value::Object out;
+            out["nextStep"] = "chargePayment";
+            out["orderId"] = "order-42";
+            out["amount"] = 99;
+            return Value(std::move(out));
+        }
+    );
+    pool.registerStep(
+        "chargePayment",
+        [&](const WorkflowStepExecution& step) -> Value
+        {
+            capturedInput = step.input;
+            return completeOutput();
+        }
+    );
+    pool.start();
+
+    const auto exec = ctx.waitForCompletion(id);
+    pool.stop();
+
+    REQUIRE(exec.status == WorkflowExecutionStatus::Completed);
+    REQUIRE(capturedInput.contains("orderId"));
+    REQUIRE(capturedInput.at("orderId").asString() == "order-42");
+    REQUIRE(capturedInput.contains("amount"));
+    REQUIRE(capturedInput.at("amount").asInt() == 99);
+    REQUIRE(!capturedInput.contains("nextStep"));
+}
+
 TEST_CASE("WorkflowWorkerPool with single poller handles multiple definitions")
 {
     PoolTestContext ctx;

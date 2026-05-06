@@ -24,6 +24,7 @@ struct NextStepDecision
     bool workflowComplete = false;
     std::optional<std::string> nextStepName;
     json::Value updatedState = json::Value::object();
+    json::Value nextStepInput = json::Value::object();
 };
 
 class WorkflowLogic
