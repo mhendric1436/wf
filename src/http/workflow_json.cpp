@@ -3,6 +3,36 @@
 #include <cstdio>
 #include <ctime>
 
+namespace
+{
+
+constexpr const char* kAttempt = "attempt";
+constexpr const char* kCompletedAt = "completedAt";
+constexpr const char* kCreatedAt = "createdAt";
+constexpr const char* kCurrentStepAttempt = "currentStepAttempt";
+constexpr const char* kCurrentStepName = "currentStepName";
+constexpr const char* kErrors = "errors";
+constexpr const char* kExpectedExecutionTime = "expectedExecutionTime";
+constexpr const char* kFailureReason = "failureReason";
+constexpr const char* kInput = "input";
+constexpr const char* kLeaseExpiresAt = "leaseExpiresAt";
+constexpr const char* kMaxRetries = "maxRetries";
+constexpr const char* kName = "name";
+constexpr const char* kOutput = "output";
+constexpr const char* kStartedAt = "startedAt";
+constexpr const char* kStartWorkflowStepName = "startWorkflowStepName";
+constexpr const char* kState = "state";
+constexpr const char* kStatus = "status";
+constexpr const char* kStepName = "stepName";
+constexpr const char* kSteps = "steps";
+constexpr const char* kValid = "valid";
+constexpr const char* kWorkerId = "workerId";
+constexpr const char* kWorkflowExecutionId = "workflowExecutionId";
+constexpr const char* kWorkflowName = "workflowName";
+constexpr const char* kWorkflowVersion = "workflowVersion";
+
+} // namespace
+
 namespace workflow::http
 {
 
@@ -78,16 +108,16 @@ std::string toString(StepExecutionStatus status)
 json::Value toJson(const WorkflowStep& step)
 {
     json::Value::Object obj;
-    obj["name"] = step.name;
+    obj[kName] = step.name;
 
     if (step.expectedExecutionTime.has_value())
     {
-        obj["expectedExecutionTime"] = step.expectedExecutionTime.value();
+        obj[kExpectedExecutionTime] = step.expectedExecutionTime.value();
     }
 
     if (step.maxRetries.has_value())
     {
-        obj["maxRetries"] = step.maxRetries.value();
+        obj[kMaxRetries] = step.maxRetries.value();
     }
 
     for (const auto& [k, v] : step.additionalFields)
@@ -107,69 +137,68 @@ json::Value toJson(const WorkflowDefinition& def)
     }
 
     json::Value::Object obj;
-    obj["workflowName"] = def.workflowName;
-    obj["workflowVersion"] = def.workflowVersion;
-    obj["startWorkflowStepName"] = def.startWorkflowStepName;
-    obj["expectedExecutionTime"] = def.expectedExecutionTime;
-    obj["steps"] = json::Value(std::move(steps));
+    obj[kWorkflowName] = def.workflowName;
+    obj[kWorkflowVersion] = def.workflowVersion;
+    obj[kStartWorkflowStepName] = def.startWorkflowStepName;
+    obj[kExpectedExecutionTime] = def.expectedExecutionTime;
+    obj[kSteps] = json::Value(std::move(steps));
     return json::Value(std::move(obj));
 }
 
 json::Value toJson(const WorkflowDefinitionKey& key)
 {
     json::Value::Object obj;
-    obj["workflowName"] = key.workflowName;
-    obj["workflowVersion"] = key.workflowVersion;
+    obj[kWorkflowName] = key.workflowName;
+    obj[kWorkflowVersion] = key.workflowVersion;
     return json::Value(std::move(obj));
 }
 
 json::Value toJson(const WorkflowExecution& exec)
 {
     json::Value::Object obj;
-    obj["workflowExecutionId"] = exec.workflowExecutionId;
-    obj["workflowName"] = exec.workflowName;
-    obj["workflowVersion"] = exec.workflowVersion;
-    obj["status"] = toString(exec.status);
-    obj["currentStepName"] = exec.currentStepName;
-    obj["input"] = exec.input;
-    obj["state"] = exec.state;
-    obj["currentStepAttempt"] = exec.currentStepAttempt;
-    obj["failureReason"] =
+    obj[kWorkflowExecutionId] = exec.workflowExecutionId;
+    obj[kWorkflowName] = exec.workflowName;
+    obj[kWorkflowVersion] = exec.workflowVersion;
+    obj[kStatus] = toString(exec.status);
+    obj[kCurrentStepName] = exec.currentStepName;
+    obj[kInput] = exec.input;
+    obj[kState] = exec.state;
+    obj[kCurrentStepAttempt] = exec.currentStepAttempt;
+    obj[kFailureReason] =
         exec.failureReason.has_value() ? json::Value(exec.failureReason.value()) : json::Value();
-    obj["startedAt"] =
+    obj[kStartedAt] =
         exec.startedAt.has_value() ? json::Value(toIso8601(exec.startedAt.value())) : json::Value();
-    obj["completedAt"] = exec.completedAt.has_value()
-                             ? json::Value(toIso8601(exec.completedAt.value()))
-                             : json::Value();
+    obj[kCompletedAt] = exec.completedAt.has_value()
+                            ? json::Value(toIso8601(exec.completedAt.value()))
+                            : json::Value();
     return json::Value(std::move(obj));
 }
 
 json::Value toJson(const WorkflowStepExecution& step)
 {
     json::Value::Object obj;
-    obj["workflowExecutionId"] = step.workflowExecutionId;
-    obj["workflowName"] = step.workflowName;
-    obj["workflowVersion"] = step.workflowVersion;
-    obj["stepName"] = step.stepName;
-    obj["attempt"] = step.attempt;
-    obj["status"] = toString(step.status);
-    obj["workerId"] =
-        step.workerId.has_value() ? json::Value(step.workerId.value()) : json::Value();
-    obj["leaseExpiresAt"] = step.leaseExpiresAt.has_value()
-                                ? json::Value(toIso8601(step.leaseExpiresAt.value()))
-                                : json::Value();
-    obj["failureReason"] =
+    obj[kWorkflowExecutionId] = step.workflowExecutionId;
+    obj[kWorkflowName] = step.workflowName;
+    obj[kWorkflowVersion] = step.workflowVersion;
+    obj[kStepName] = step.stepName;
+    obj[kAttempt] = step.attempt;
+    obj[kStatus] = toString(step.status);
+    obj[kWorkerId] = step.workerId.has_value() ? json::Value(step.workerId.value()) : json::Value();
+    obj[kLeaseExpiresAt] = step.leaseExpiresAt.has_value()
+                               ? json::Value(toIso8601(step.leaseExpiresAt.value()))
+                               : json::Value();
+    obj[kFailureReason] =
         step.failureReason.has_value() ? json::Value(step.failureReason.value()) : json::Value();
-    obj["createdAt"] =
+    obj[kCreatedAt] =
         step.createdAt.has_value() ? json::Value(toIso8601(step.createdAt.value())) : json::Value();
-    obj["startedAt"] =
+    obj[kStartedAt] =
         step.startedAt.has_value() ? json::Value(toIso8601(step.startedAt.value())) : json::Value();
-    obj["completedAt"] = step.completedAt.has_value()
-                             ? json::Value(toIso8601(step.completedAt.value()))
-                             : json::Value();
-    obj["input"] = step.input;
-    obj["state"] = step.state;
-    obj["output"] = step.output;
+    obj[kCompletedAt] = step.completedAt.has_value()
+                            ? json::Value(toIso8601(step.completedAt.value()))
+                            : json::Value();
+    obj[kInput] = step.input;
+    obj[kState] = step.state;
+    obj[kOutput] = step.output;
     return json::Value(std::move(obj));
 }
 
@@ -182,8 +211,8 @@ json::Value toJson(const ValidationResult& result)
     }
 
     json::Value::Object obj;
-    obj["valid"] = result.valid;
-    obj["errors"] = json::Value(std::move(errors));
+    obj[kValid] = result.valid;
+    obj[kErrors] = json::Value(std::move(errors));
     return json::Value(std::move(obj));
 }
 
