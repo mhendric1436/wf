@@ -1,0 +1,141 @@
+@startuml
+hide footbox
+
+title WorkflowWorkerPool — Threading & KeepAliveThread RAII
+
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+skinparam SequenceArrowThickness 1.5
+skinparam NoteBackgroundColor #FFFDE7
+skinparam NoteBorderColor #F9A825
+
+participant "PollerThread\n(one per pollerCount)" as Poller #LightBlue
+participant "SharedState\n(stateMutex + idleExecutors\n+ workQueue + CVs)" as State #LightGreen
+participant "clientMutex +\nWorkflowClient" as Client #LightCoral
+participant "HTTP Server" as Server #White
+participant "ExecutorThread\n(one per threadCount)" as Executor #Thistle
+participant "KeepAliveThread\n(one per in-flight step)" as KA #PeachPuff
+participant "StepHandler\n(user lambda)" as Handler #White
+
+== Pool start() ==
+
+[-> Poller : spawn (pollerCount threads,\neach starts at definitions[i % N])
+[-> Executor : spawn (threadCount threads)
+note over State
+  idleExecutors = threadCount
+  workQueue = empty
+end note
+
+== Poller cycle: slot-based back-pressure ==
+
+loop while !stopping
+    Poller -> State : lock(stateMutex)\nread idleExecutors
+    alt idleExecutors == 0
+        State --> Poller : wait on slotsAvailable CV\n(woken by executor finishing)
+    else idleExecutors > 0
+        Poller -> State : toRequest = min(idleExecutors,\n  maxResultsPerPoll)\nidleExecutors -= toRequest\nunlock
+        note over Poller, State #E8F5E9
+          Speculative decrement prevents
+          over-claiming across multiple pollers.
+          Unused slots are returned after poll.
+        end note
+        Poller -> Client : lock(clientMutex)\npollAndClaimWorkflowSteps(\n  {def, workerId, toRequest})
+        Client -> Server : HTTP POST /poll-and-claim
+        Server --> Client : steps[0..actual]
+        Client --> Poller : unlock(clientMutex)\nreturn steps
+        Poller -> State : lock(stateMutex)\nidleExecutors += (toRequest - actual)\npush steps → workQueue\nnotify queueNotEmpty CV\nnotify slotsAvailable if slots returned\nunlock
+    end
+    alt actual == 0
+        Poller -> Poller : wait_for(slotsAvailable CV,\n  pollInterval)\n(woken early if slots freed)
+    end
+end
+
+== Executor cycle ==
+
+loop while !stopping or !workQueue.empty()
+    Executor -> State : lock(stateMutex)\nwait on queueNotEmpty CV
+    State --> Executor : unlock\nreturn step
+    Executor -> Executor : executeStep(step)
+
+    == Inside executeStep — KeepAliveThread RAII ==
+
+    group KeepAliveThread scope { }
+        Executor -> KA : construct KeepAliveThread\n(interval, ping_lambda)
+        activate KA
+        note over KA #FFF9C4
+          Constructor spawns background
+          thread immediately. Executor
+          thread continues without blocking.
+        end note
+
+        loop every keepAliveInterval (on KeepAliveThread background thread)
+            KA -> Client : lock(clientMutex)\nkeepAliveWorkflowStep(...)
+            Client -> Server : HTTP POST /keep-alive
+            Server --> Client : ok
+            Client --> KA : unlock(clientMutex)
+        end
+
+        Executor -> Handler : it->second(step)\n(user lambda)
+        activate Handler
+        note over Executor, Handler
+          Handler and KeepAlive run concurrently.
+          clientMutex serializes their HTTP calls.
+        end note
+        Handler --> Executor : return output\n(or throw)
+        deactivate Handler
+
+        Executor -> KA : ~KeepAliveThread()\n[scope closes]
+        note over Executor, KA #FFCCBC
+          **RAII destruction is synchronous:**
+          1. done = true  (under KeepAlive's own mutex)
+          2. cv.notify_all()  (wakes sleeping ping thread)
+          3. thread.join()  ← executor BLOCKS HERE
+             until ping thread exits run()
+        end note
+        KA -> KA : sees done==true\nexits run() loop
+        deactivate KA
+        Executor <-- KA : join() returns\n(destructor completes)
+        note over Executor, KA #E8F5E9
+          Invariant: no ping will ever arrive
+          at the server after join() returns.
+          complete/fail always follows last ping.
+        end note
+    end
+
+    == After scope: complete or fail ==
+
+    alt succeeded
+        Executor -> Client : lock(clientMutex)\ncompleteWorkflowStep(...)
+        Client -> Server : HTTP POST /complete
+        Server --> Client : execution
+        Client --> Executor : unlock(clientMutex)
+    else threw exception
+        Executor -> Client : lock(clientMutex)\nfailWorkflowStep(reason)
+        Client -> Server : HTTP POST /fail
+        Server --> Client : execution
+        Client --> Executor : unlock(clientMutex)
+    end
+
+    Executor -> State : lock(stateMutex)\n++idleExecutors\nnotify slotsAvailable CV\nunlock
+    note over Executor, State #E8F5E9
+      Wakes a sleeping poller so it can
+      immediately claim the next step
+      without waiting for pollInterval.
+    end note
+end
+
+== Pool stop() ==
+
+[-> State : lock(stateMutex)\nstopping = true\nunlock\nnotify slotsAvailable + queueNotEmpty
+note over Poller
+  Pollers: exit while(!stopping) loop
+end note
+note over Executor
+  Executors: drain remaining queue
+  items before exiting — claimed
+  steps must not be abandoned.
+end note
+[<-- Poller : join() all poller threads
+[<-- Executor : join() all executor threads\n(after queue is drained)
+
+@enduml
