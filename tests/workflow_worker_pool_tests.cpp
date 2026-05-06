@@ -375,6 +375,41 @@ TEST_CASE("WorkflowWorkerPool destructor stops the pool")
     REQUIRE(exec.execution->status == WorkflowExecutionStatus::Completed);
 }
 
+TEST_CASE("WorkflowWorkerPool serves minority definition despite heavy backlog on another")
+{
+    // Regression for head-of-list bias: if one definition monopolises executor
+    // slots the other must still complete within the timeout.
+    PoolTestContext ctx;
+
+    // Start many executions for orderProcessing (the "heavy" definition).
+    std::vector<std::string> heavyIds;
+    for (int i = 0; i < 8; ++i)
+    {
+        heavyIds.push_back(ctx.startOrder());
+    }
+
+    // Start one execution for fulfillOrder (the "minority" definition).
+    const auto minorityId = ctx.startFulfill();
+
+    WorkflowWorkerPool pool(ctx.client, ctx.allDefinitions(), "pool-001", fastPoolOptions(4, 2));
+    pool.registerStep(
+        "validateOrder", [](const WorkflowStepExecution&) { return completeOutput(); }
+    );
+    pool.registerStep("shipOrder", [](const WorkflowStepExecution&) { return completeOutput(); });
+    pool.start();
+
+    // The minority definition must complete even though the heavy one produces
+    // far more work.
+    const auto minorityExec = ctx.waitForCompletion(minorityId);
+    REQUIRE(minorityExec.status == WorkflowExecutionStatus::Completed);
+
+    for (const auto& id : heavyIds)
+    {
+        REQUIRE(ctx.waitForCompletion(id).status == WorkflowExecutionStatus::Completed);
+    }
+    pool.stop();
+}
+
 TEST_CASE("WorkflowWorkerPool with single poller handles multiple definitions")
 {
     PoolTestContext ctx;

@@ -9,6 +9,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -100,22 +101,41 @@ struct WorkflowWorkerPool::Impl
 
     void runPoller(std::size_t pollerIndex)
     {
-        if (definitions.empty())
+        // Build this poller's disjoint subset: every pollerCount-th definition
+        // starting at pollerIndex. Poller 0 covers {0, 2, 4, ...},
+        // poller 1 covers {1, 3, 5, ...}, etc. No two pollers share a definition,
+        // eliminating inter-poller competition for the same definition's steps.
+        std::vector<std::size_t> subset;
+        for (std::size_t i = pollerIndex; i < definitions.size(); i += options.pollerCount)
+        {
+            subset.push_back(i);
+        }
+
+        if (subset.empty())
         {
             return;
         }
 
-        const std::size_t n = definitions.size();
-        std::size_t defIdx = pollerIndex % n;
+        // Seed with both entropy and pollerIndex so concurrent pollers get
+        // independent sequences even if random_device returns the same value.
+        std::mt19937 rng(std::random_device{}() ^ static_cast<unsigned>(pollerIndex));
 
         while (!stopping)
         {
             bool foundWork = false;
 
-            for (std::size_t i = 0; i < n && !stopping; ++i)
+            // Shuffle each cycle so no definition within this poller's subset
+            // receives structural priority over another.
+            std::shuffle(subset.begin(), subset.end(), rng);
+
+            for (const std::size_t defIdx : subset)
             {
+                if (stopping)
+                {
+                    break;
+                }
+
                 const auto& def = definitions[defIdx];
-                defIdx = (defIdx + 1) % n;
 
                 // Speculatively claim executor slots before polling so we never
                 // claim more steps than we can immediately execute.

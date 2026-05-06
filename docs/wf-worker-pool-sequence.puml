@@ -1,7 +1,7 @@
 @startuml
 hide footbox
 
-title WorkflowWorkerPool — Threading & KeepAliveThread RAII
+title WorkflowWorkerPool — Threading, Fair Polling & KeepAliveThread RAII
 
 skinparam ParticipantPadding 20
 skinparam BoxPadding 10
