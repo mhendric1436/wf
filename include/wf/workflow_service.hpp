@@ -2,8 +2,8 @@
 
 #include "wf/json.hpp"
 #include "wf/workflow_definition.hpp"
+#include "wf/workflow_json.hpp"
 #include "wf/workflow_orchestrator.hpp"
-#include "wf/workflow_parser.hpp"
 #include "wf/workflow_step_execution.hpp"
 
 #include <atomic>

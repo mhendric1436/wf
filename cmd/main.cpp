@@ -1,5 +1,5 @@
 #include "wf/json.hpp"
-#include "wf/workflow_parser.hpp"
+#include "wf/workflow_json.hpp"
 
 #include <fstream>
 #include <iostream>
