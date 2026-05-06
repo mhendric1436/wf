@@ -1,5 +1,6 @@
 #include "wf/workflow_worker.hpp"
 
+#include "keep_alive_thread.hpp"
 #include "wf/workflow_service.hpp"
 
 #include <atomic>
@@ -12,78 +13,6 @@
 
 namespace workflow
 {
-
-namespace
-{
-
-// Sends keep-alive pings on a background thread until destroyed.
-struct KeepAliveThread
-{
-    WorkflowClient& client;
-    std::string workflowExecutionId;
-    std::string stepName;
-    std::string workerId;
-    std::chrono::milliseconds interval;
-
-    std::mutex mutex;
-    std::condition_variable cv;
-    bool done = false;
-    std::thread thread;
-
-    KeepAliveThread(
-        WorkflowClient& client_,
-        const std::string& workflowExecutionId_,
-        const std::string& stepName_,
-        const std::string& workerId_,
-        std::chrono::milliseconds interval_
-    )
-        : client(client_),
-          workflowExecutionId(workflowExecutionId_),
-          stepName(stepName_),
-          workerId(workerId_),
-          interval(interval_),
-          thread([this] { run(); })
-    {
-    }
-
-    ~KeepAliveThread()
-    {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            done = true;
-        }
-        cv.notify_all();
-        thread.join();
-    }
-
-    void run()
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        while (!done)
-        {
-            cv.wait_for(lock, interval, [this] { return done; });
-
-            if (!done)
-            {
-                try
-                {
-                    client.keepAliveWorkflowStep(
-                        KeepAliveWorkflowStepRequest{
-                            .workflowExecutionId = workflowExecutionId,
-                            .stepName = stepName,
-                            .workerId = workerId,
-                        }
-                    );
-                }
-                catch (...)
-                {
-                }
-            }
-        }
-    }
-};
-
-} // namespace
 
 struct WorkflowWorker::Impl
 {
@@ -179,7 +108,17 @@ struct WorkflowWorker::Impl
 
         {
             KeepAliveThread keepAlive(
-                client, step.workflowExecutionId, step.stepName, workerId, options.keepAliveInterval
+                options.keepAliveInterval,
+                [&]
+                {
+                    client.keepAliveWorkflowStep(
+                        KeepAliveWorkflowStepRequest{
+                            .workflowExecutionId = step.workflowExecutionId,
+                            .stepName = step.stepName,
+                            .workerId = workerId,
+                        }
+                    );
+                }
             );
 
             try
