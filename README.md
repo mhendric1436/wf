@@ -5,23 +5,23 @@
 
 It currently provides:
 
-- a custom JSON parser
+- JSON value and parsing through the sibling `mt` library
 - workflow definition parsing and validation
 - workflow execution orchestration
 - worker-oriented step execution
 - atomic poll-and-claim semantics
 - lease-based step ownership with automatic sweep
 - keep-alive support for claimed steps
-- per-execution striped locking
+- optimistic concurrency control through `mt::TransactionProvider`
 - `startedAt`/`completedAt` timestamps on executions
 - workflow and step cancellation
-- pluggable store interfaces
-- in-memory backend
-- SQLite backend
+- `mt::Table`-backed workflow definition, execution, and step rows
+- private workflow row mappings under `src/tables/`
+- in-memory and SQLite persistence through `mt` backends
 - HTTP REST API server (`WorkflowHttpServer`) with OpenAPI 3.1 spec
 - RFC 9457 Problem Details error responses
-- ISO 8601 timestamps at the HTTP boundary
-- `wf` CLI binary (`validate`, `parse` subcommands)
+- ISO 8601 timestamps at API and table JSON boundaries
+- `wf` CLI binary (`validate`, `parse`, `serve`, `register`, `list`, `start`, `get`, `cancel`)
 - Catch2 unit tests
 - Makefile-based build using `clang++`
 - `-MMD -MP` header dependency tracking
@@ -33,9 +33,13 @@ The project is intentionally lightweight and dependency-minimal. Vendored third-
 - Catch2 amalgamated test runner (`third_party/catch2/`)
 - cpp-httplib single-header HTTP library v0.18.5 (`third_party/httplib/`)
 
+Non-vendored local dependency:
+
+- `mt`, expected at `$(HOME)/repos/mt` by the Makefile, provides JSON, typed tables, transactions, OCC, and memory/SQLite backends.
+
 ## Short description
 
-C++20 workflow framework with custom JSON parsing, workflow definition validation, pluggable stores, in-memory backend, and worker-oriented step orchestration.
+C++20 workflow framework with workflow definition validation, `mt` table-backed storage, OCC-based orchestration, HTTP transport, and worker-oriented step execution.
 
 ## Repository layout
 
@@ -57,66 +61,59 @@ wf/
 ├── include/
 │   └── wf/
 │       ├── duration.hpp
-│       ├── json.hpp
 │       ├── workflow_definition.hpp
 │       ├── workflow_execution.hpp
 │       ├── workflow_step_execution.hpp
 │       ├── workflow_logic.hpp
 │       ├── workflow_orchestrator.hpp
-│       ├── workflow_parser.hpp
+│       ├── workflow_json.hpp
 │       ├── workflow_service.hpp
+│       ├── workflow_client.hpp
+│       ├── workflow_transport.hpp
+│       ├── workflow_worker.hpp
+│       ├── workflow_worker_pool.hpp
 │       ├── http/
 │       │   └── workflow_http_server.hpp
-│       ├── store/
-│       │   ├── workflow_definition_store.hpp
-│       │   ├── workflow_execution_store.hpp
-│       │   └── workflow_step_execution_store.hpp
-│       └── backend/
-│           ├── memory/
-│           │   ├── in_memory_workflow_definition_store.hpp
-│           │   ├── in_memory_workflow_execution_store.hpp
-│           │   └── in_memory_workflow_step_execution_store.hpp
-│           └── sqlite/
-│               ├── sqlite_database.hpp
-│               ├── sqlite_workflow_definition_store.hpp
-│               ├── sqlite_workflow_execution_store.hpp
-│               └── sqlite_workflow_step_execution_store.hpp
+│       ├── logic/
+│       │   └── step_output_routing_logic.hpp
+│       └── transport/
+│           ├── http_transport.hpp
+│           └── in_process_transport.hpp
 ├── src/
 │   ├── duration.cpp
-│   ├── json.cpp
-│   ├── workflow_parser.cpp
+│   ├── workflow_json.cpp
 │   ├── workflow_orchestrator.cpp
 │   ├── workflow_service.cpp
+│   ├── workflow_client.cpp
+│   ├── workflow_worker.cpp
+│   ├── workflow_worker_pool.cpp
 │   ├── http/
 │   │   └── workflow_http_server.cpp
-│   └── backend/
-│       ├── memory/
-│       │   ├── in_memory_workflow_definition_store.cpp
-│       │   ├── in_memory_workflow_execution_store.cpp
-│       │   └── in_memory_workflow_step_execution_store.cpp
-│       └── sqlite/
-│           ├── sqlite_database.cpp
-│           ├── sqlite_workflow_definition_store.cpp
-│           ├── sqlite_workflow_execution_store.cpp
-│           └── sqlite_workflow_step_execution_store.cpp
+│   ├── logic/
+│   │   └── step_output_routing_logic.cpp
+│   ├── tables/
+│   │   ├── workflow_definition_mapping.hpp
+│   │   ├── workflow_execution_mapping.hpp
+│   │   └── workflow_step_execution_mapping.hpp
+│   └── transport/
+│       ├── http_transport.cpp
+│       └── in_process_transport.cpp
 ├── tests/
 │   ├── duration_tests.cpp
 │   ├── workflow_parser_tests.cpp
 │   ├── workflow_orchestrator_tests.cpp
 │   ├── workflow_service_tests.cpp
+│   ├── workflow_client_tests.cpp
+│   ├── workflow_worker_tests.cpp
+│   ├── workflow_worker_pool_tests.cpp
+│   ├── e2e/
+│   │   └── workflow_e2e_tests.cpp
 │   ├── http/
 │   │   └── workflow_http_server_tests.cpp
-│   └── backend/
-│       ├── memory/
-│       │   ├── in_memory_workflow_definition_store_tests.cpp
-│       │   ├── in_memory_workflow_execution_store_tests.cpp
-│       │   ├── in_memory_workflow_step_execution_store_tests.cpp
-│       │   └── in_memory_workflow_step_execution_store_lease_tests.cpp
-│       └── sqlite/
-│           ├── sqlite_workflow_definition_store_tests.cpp
-│           ├── sqlite_workflow_execution_store_tests.cpp
-│           ├── sqlite_workflow_step_execution_store_tests.cpp
-│           └── sqlite_workflow_step_execution_store_lease_tests.cpp
+│   ├── logic/
+│   │   └── step_output_routing_logic_tests.cpp
+│   └── transport/
+│       └── http_transport_tests.cpp
 └── third_party/
     ├── catch2/
     │   ├── catch_amalgamated.cpp
@@ -220,15 +217,17 @@ The parser/validator currently enforces:
 - top-level additional fields are rejected
 - step-level additional fields are preserved
 
-## Custom JSON parser
+## JSON support
 
-The project uses a custom JSON parser instead of `nlohmann/json`.
+`wf` uses the sibling `mt` library's JSON value and parser instead of `nlohmann/json`.
 
 Files:
 
 ```text
-include/wf/json.hpp
-src/json.cpp
+$(HOME)/repos/mt/include/mt/json.hpp
+$(HOME)/repos/mt/include/mt/json_parser.hpp
+include/wf/workflow_json.hpp
+src/workflow_json.cpp
 ```
 
 The parser supports:
@@ -241,7 +240,7 @@ The parser supports:
 - booleans
 - null
 
-Unicode escape sequences such as `\uXXXX` are intentionally not supported yet. The parser reports them as parse errors instead of silently producing incorrect values.
+`wf` keeps workflow-specific JSON conversion, validation, and ISO 8601 timestamp serialization in `workflow_json`.
 
 ## Duration utility
 
@@ -306,9 +305,11 @@ The main dependency structure is:
 ```text
 WorkflowService
 └── WorkflowOrchestrator
-    ├── WorkflowDefinitionStore
-    ├── WorkflowExecutionStore
-    ├── WorkflowStepExecutionStore
+    ├── mt::Database
+    ├── mt::TransactionProvider
+    ├── mt::Table<WorkflowDefinition, WorkflowDefinitionMapping>
+    ├── mt::Table<WorkflowExecution, WorkflowExecutionMapping>
+    ├── mt::Table<WorkflowStepExecution, WorkflowStepExecutionMapping>
     └── WorkflowLogic
 ```
 
@@ -320,6 +321,31 @@ WorkflowService
 - workflow executions
 - workflow step executions
 - workflow business logic
+
+The workflow row mappings are private implementation details under:
+
+```text
+src/tables/
+```
+
+`WorkflowOrchestrator` accepts an `mt::Database&` and constructs its typed tables internally. This keeps the public wf API independent of the private mapping types while still using `mt::Table` as the storage boundary.
+
+Typical in-process setup:
+
+```cpp
+#include "mt/backends/memory.hpp"
+#include "mt/database.hpp"
+#include "wf/logic/step_output_routing_logic.hpp"
+#include "wf/workflow_orchestrator.hpp"
+#include "wf/workflow_service.hpp"
+
+auto backend = std::make_shared<mt::backends::memory::MemoryBackend>();
+mt::Database database(backend);
+
+workflow::logic::StepOutputRoutingLogic logic;
+workflow::WorkflowOrchestrator orchestrator(database, logic);
+workflow::WorkflowService service(orchestrator);
+```
 
 ## Background lease sweep
 
@@ -339,22 +365,16 @@ The sweep thread starts when `WorkflowService` is constructed and stops cleanly 
 The sweep calls `WorkflowOrchestrator::sweepExpiredLeases()`, which:
 
 1. Finds all `Running` steps whose `leaseExpiresAt` is in the past.
-2. For each expired step, acquires the per-execution stripe lock.
+2. Handles the matching execution and step rows inside an `mt` transaction.
 3. If the step's attempt still matches the current execution attempt, retries or fails the execution depending on remaining `maxRetries`.
 
-## Per-execution striped locking
+## Concurrency model
 
-`WorkflowOrchestrator` uses 64 mutex stripes to allow concurrent operations on independent workflow executions.
+`WorkflowOrchestrator` uses `mt::TransactionProvider` for optimistic concurrency control instead of wf-owned store mutexes or per-execution stripe locks.
 
-```cpp
-static constexpr std::size_t STRIPE_COUNT = 64;
-std::mutex& stripeFor(const std::string& executionId) const;
-mutable std::array<std::mutex, STRIPE_COUNT> executionStripes_;
-```
+State-changing operations such as `startWorkflow`, `pollAndClaimWorkflowSteps`, `completeStep`, `failStep`, `cancelWorkflow`, and `sweepExpiredLeases` run as `mt` transactions. When concurrent callers race on the same rows or query result sets, `mt` detects the conflict and the orchestrator retries where appropriate.
 
-Operations that modify a single execution (`completeStep`, `failStep`, `keepAliveStep`, `cancelWorkflow`) acquire only the stripe for that execution ID. Independent executions proceed without contention.
-
-`startWorkflow` and `pollAndClaimWorkflowSteps` rely on store-level mutexes and require no orchestrator lock.
+Worker and service lifecycle code still uses local mutexes and condition variables for thread shutdown and work queues, but workflow state consistency belongs to `mt`.
 
 ## Frontend and worker API split
 
@@ -387,7 +407,7 @@ The frontend starts and manages workflow executions. Workers perform step execut
 2. Orchestrator creates WorkflowExecution with startedAt timestamp.
 3. Orchestrator creates first Pending WorkflowStepExecution.
 4. Worker calls pollAndClaimWorkflowSteps.
-5. Store atomically claims available steps (sets Running, assigns workerId and leaseExpiresAt).
+5. Orchestrator atomically claims available steps in an `mt` transaction.
 6. Worker executes business work outside WorkflowService.
 7. Worker periodically calls keepAliveWorkflowStep if needed.
 8. Worker calls completeWorkflowStep or failWorkflowStep.
@@ -415,20 +435,9 @@ struct PollAndClaimWorkflowStepsRequest {
 The caller does not provide `leaseDuration`.
 
 Internally, the orchestrator calculates lease durations from each step's `expectedExecutionTime`.
+It queries and updates `WorkflowStepExecution` rows through `mt::Table` inside a transaction.
 
-Store-level operation:
-
-```cpp
-pollAndClaim(
-    workflowName,
-    workflowVersion,
-    workerId,
-    maxResults,
-    leaseDurationsByStepName
-)
-```
-
-The store atomically:
+The orchestrator transactionally:
 
 ```text
 1. finds matching Pending steps
@@ -439,6 +448,8 @@ The store atomically:
 6. sets startedAt
 7. returns the claimed steps
 ```
+
+Competing workers either commit non-overlapping claims or retry after an OCC conflict.
 
 ## Step leases
 
@@ -487,10 +498,10 @@ The orchestrator:
 4. loads the WorkflowDefinition
 5. finds the current step definition
 6. calculates lease duration from step.expectedExecutionTime / 3
-7. delegates keepAlive to WorkflowStepExecutionStore
+7. loads and updates the current WorkflowStepExecution row in an mt transaction
 ```
 
-The store validates:
+The transaction validates:
 
 ```text
 - step exists
@@ -564,117 +575,54 @@ Canceled
 
 `completedAt` is set on `WorkflowExecution` when the workflow reaches `Completed`, `Failed`, or `Canceled`. `startedAt` is set when the workflow execution is created.
 
-## Store interfaces
+## mt tables and persistence
 
-Store interfaces live under:
+Workflow state is stored as typed `mt::Table` rows. The private row mappings live under:
+
+```text
+src/tables/workflow_definition_mapping.hpp
+src/tables/workflow_execution_mapping.hpp
+src/tables/workflow_step_execution_mapping.hpp
+```
+
+The mappings define table names, row keys, JSON serialization, and JSON indexes used by `mt` backends. The logical tables are:
+
+```text
+workflow_definitions
+workflow_executions
+workflow_step_executions
+```
+
+Row keys:
+
+```text
+WorkflowDefinition      workflowName:workflowVersion
+WorkflowExecution       workflowExecutionId
+WorkflowStepExecution   workflowExecutionId:stepName:attempt
+```
+
+`WorkflowOrchestrator` constructs these tables from an `mt::Database&` and performs state changes with `mt::TransactionProvider`. `mt` provides OCC validation for both row reads and predicate reads, which is what makes poll-and-claim, completion, failure, cancellation, and lease sweep concurrency-safe.
+
+The `wf` CLI `serve` command uses the `mt` SQLite backend:
+
+```bash
+wf serve --port 8080 --db /path/to/wf.db
+```
+
+Tests primarily use the `mt` in-memory backend for orchestrator, service, worker, HTTP, and transport behavior.
+
+## Legacy store code
+
+The repository still contains the earlier wf-owned store interfaces and memory/SQLite store implementations under:
 
 ```text
 include/wf/store/
+include/wf/backend/
+src/backend/
+tests/backend/
 ```
 
-Current interfaces:
-
-```text
-workflow_definition_store.hpp
-workflow_execution_store.hpp
-workflow_step_execution_store.hpp
-```
-
-`WorkflowDefinitionStore` supports:
-
-```text
-save
-find
-list
-remove
-```
-
-`WorkflowExecutionStore` supports:
-
-```text
-save
-find
-update
-```
-
-`WorkflowStepExecutionStore` supports:
-
-```text
-save
-find
-pollAndClaim
-keepAlive
-update
-cancelByExecution
-findExpiredRunning
-remove
-```
-
-`cancelByExecution` cancels all `Pending` and `Running` steps for a given execution ID. `findExpiredRunning` returns all `Running` steps whose `leaseExpiresAt` is in the past; this is used by the background sweep.
-
-## In-memory backend
-
-The initial backend is in-memory.
-
-Headers:
-
-```text
-include/wf/backend/memory/in_memory_workflow_definition_store.hpp
-include/wf/backend/memory/in_memory_workflow_execution_store.hpp
-include/wf/backend/memory/in_memory_workflow_step_execution_store.hpp
-```
-
-Sources:
-
-```text
-src/backend/memory/in_memory_workflow_definition_store.cpp
-src/backend/memory/in_memory_workflow_execution_store.cpp
-src/backend/memory/in_memory_workflow_step_execution_store.cpp
-```
-
-Tests:
-
-```text
-tests/backend/memory/in_memory_workflow_definition_store_tests.cpp
-tests/backend/memory/in_memory_workflow_execution_store_tests.cpp
-tests/backend/memory/in_memory_workflow_step_execution_store_tests.cpp
-tests/backend/memory/in_memory_workflow_step_execution_store_lease_tests.cpp
-```
-
-Each store uses a `mutable std::mutex` to protect its internal map. The in-memory step execution store makes `pollAndClaim` and `keepAlive` atomic under that mutex.
-
-## SQLite backend
-
-The SQLite backend provides durable storage backed by a single SQLite database file.
-
-Headers:
-
-```text
-include/wf/backend/sqlite/sqlite_database.hpp
-include/wf/backend/sqlite/sqlite_workflow_definition_store.hpp
-include/wf/backend/sqlite/sqlite_workflow_execution_store.hpp
-include/wf/backend/sqlite/sqlite_workflow_step_execution_store.hpp
-```
-
-Sources:
-
-```text
-src/backend/sqlite/sqlite_database.cpp
-src/backend/sqlite/sqlite_workflow_definition_store.cpp
-src/backend/sqlite/sqlite_workflow_execution_store.cpp
-src/backend/sqlite/sqlite_workflow_step_execution_store.cpp
-```
-
-Tests:
-
-```text
-tests/backend/sqlite/sqlite_workflow_definition_store_tests.cpp
-tests/backend/sqlite/sqlite_workflow_execution_store_tests.cpp
-tests/backend/sqlite/sqlite_workflow_step_execution_store_tests.cpp
-tests/backend/sqlite/sqlite_workflow_step_execution_store_lease_tests.cpp
-```
-
-`SqliteDatabase` owns the `sqlite3*` connection and creates the schema on construction. Each store holds a reference to the shared `SqliteDatabase`. The build links against `-lsqlite3`.
+These are no longer used by `WorkflowOrchestrator` or `WorkflowService`; they remain only as transitional code and tests until the cleanup step removes them.
 
 ## HTTP server
 
@@ -731,7 +679,7 @@ POST   /v1/workflow-step-executions/fail
 
 ### Timestamps
 
-All timestamps are ISO 8601 strings in UTC (e.g. `2026-05-05T14:32:00.123Z`). The internal C++ model uses `std::chrono::system_clock::time_point`; conversion happens at the HTTP boundary.
+All timestamps are ISO 8601 strings in UTC (e.g. `2026-05-05T14:32:00.123456Z`). The internal C++ model uses `std::chrono::system_clock::time_point`; conversion happens through `workflow_json` for HTTP responses and `mt` row JSON.
 
 ### Errors
 
@@ -766,19 +714,17 @@ api/openapi.yaml
 
 The spec is OpenAPI 3.1.0 and covers all ten endpoints, all request and response schemas, and all error responses.
 
-## Future backend layout
+## Future backend direction
 
-Additional backends should follow this layout:
+New persistence backends should be added to `mt`, not to wf-specific store interfaces. `wf` should continue to depend on:
 
 ```text
-include/wf/backend/postgres/
-src/backend/postgres/
-
-include/wf/backend/rocksdb/
-src/backend/rocksdb/
+mt::Database
+mt::Table
+mt::TransactionProvider
 ```
 
-The core framework depends only on store interfaces, not backend-specific classes.
+This keeps workflow orchestration independent of any particular durable backend while preserving a single OCC model across memory, SQLite, PostgreSQL, or future `mt` backends.
 
 ## wf CLI
 
@@ -797,8 +743,14 @@ wf <command> [args]
 Commands:
 
 ```text
-validate <file>  validate a workflow definition JSON file
-parse <file>     parse and display a workflow definition
+validate <file>                    validate a workflow definition JSON file
+parse <file>                       parse and display a workflow definition
+serve [--port <n>] --db <path>     start the HTTP server using mt SQLite storage
+register [--server <url>] <file>   register a workflow definition
+list [--server <url>]              list registered workflow definitions
+start [--server <url>] [--input <json>] <name> <version>
+get [--server <url>] <id>
+cancel [--server <url>] <id>
 ```
 
 ### validate
@@ -840,6 +792,8 @@ Required:
 - `clang++`
 - `clang-format`
 - `make`
+- sibling `mt` checkout at `$(HOME)/repos/mt`
+- SQLite development library for the `wf` CLI server path and mt SQLite backend
 
 Optional:
 
@@ -910,10 +864,13 @@ The Makefile discovers files automatically:
 
 ```text
 src/**/*.cpp
+src/tables/**/*.hpp
 tests/**/*.cpp
 cmd/**/*.cpp
 include/**/*.hpp
 ```
+
+The CLI target also compiles the `mt` SQLite backend sources from `$(HOME)/repos/mt/src/backends/sqlite` so `wf serve --db ...` can use durable `mt` storage.
 
 Header dependency tracking uses `-MMD -MP`, so changes to included headers trigger recompilation of affected object files without manual dependency management.
 
@@ -994,7 +951,7 @@ make help         Show available targets
 
 Implemented:
 
-- custom JSON parser
+- `mt` JSON integration
 - duration utility
 - workflow definition model
 - workflow definition parser and validator
@@ -1002,54 +959,46 @@ Implemented:
 - workflow step execution model with `createdAt`/`startedAt`/`completedAt` timestamps
 - workflow service API surface
 - workflow orchestrator API surface
-- store interfaces
-- in-memory definition store
-- in-memory execution store
-- in-memory step execution store
-- SQLite definition store
-- SQLite execution store
-- SQLite step execution store
-- atomic `pollAndClaim`
+- private `mt` row mappings under `src/tables`
+- `mt::Table` storage for workflow definitions, executions, and step executions
+- `mt::TransactionProvider`-backed workflow state mutations
+- OCC-based atomic `pollAndClaim`
 - internal lease duration calculation from `WorkflowStep.expectedExecutionTime`
 - lease expiration and reclaim behavior
 - `keepAliveWorkflowStep`
 - background lease sweep thread in `WorkflowService`
-- per-execution striped locking in `WorkflowOrchestrator`
 - workflow and step cancellation
+- `WorkflowClient`
+- in-process and HTTP transports
+- `WorkflowWorker`
+- `WorkflowWorkerPool`
 - HTTP REST API server (`WorkflowHttpServer`) with all ten endpoints
 - OpenAPI 3.1 specification (`api/openapi.yaml`)
 - RFC 9457 Problem Details error responses
-- ISO 8601 timestamps at the HTTP boundary
-- `wf` CLI (`validate`, `parse` subcommands)
+- ISO 8601 timestamps at HTTP and table JSON boundaries
+- `wf` CLI (`validate`, `parse`, `serve`, `register`, `list`, `start`, `get`, `cancel`)
 - example workflow definition (`examples/order-processing-workflow.json`)
 - `-MMD -MP` header dependency tracking
 - parser tests
 - duration tests
-- memory backend tests
-- SQLite backend tests
+- legacy memory backend tests
+- legacy SQLite backend tests
 - lease tests
 - orchestrator tests
 - service tests
 - HTTP server tests
+- transport tests
+- worker tests
+- e2e tests
 - PlantUML architecture and sequence diagrams
 - wildcard Makefile
 
 ## Recommended next steps
 
-1. Add `WorkflowClient` with a pluggable transport interface so callers work the same way regardless of whether they connect in-process or over HTTP:
-   ```text
-   IWorkflowTransport   (pure interface)
-   InProcessTransport   (wraps WorkflowService directly)
-   HttpTransport        (calls WorkflowHttpServer over HTTP)
-   WorkflowClient       (uses IWorkflowTransport)
-   ```
+1. Remove the legacy wf-owned store interfaces and memory/SQLite store implementations after any remaining callers are migrated to `mt`.
 
-2. Add `wf serve` CLI subcommand:
-   ```bash
-   wf serve --port 8080 --db /path/to/wf.db
-   ```
-   Wires up the SQLite backend, `WorkflowOrchestrator`, `WorkflowService`, and `WorkflowHttpServer`.
+2. Update PlantUML diagrams to reflect the current architecture: `mt::Database`, typed tables, OCC transactions, HTTP server, worker pool, and background sweep.
 
-3. Add scripted `WorkflowLogic` driven from the workflow definition JSON (linear step transition table).
+3. Add scripted `WorkflowLogic` driven from workflow definition JSON if wf should support simple declarative routing in addition to application-owned `WorkflowLogic`.
 
-4. Update PlantUML diagrams to reflect the current architecture (HTTP server, SQLite backend, background sweep, striped locking, timestamps).
+4. Add focused tests for conflict/retry behavior under `mt::TransactionConflict` once the legacy backend tests are retired.
