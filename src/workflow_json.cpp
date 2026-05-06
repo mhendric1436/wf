@@ -395,6 +395,115 @@ json::Value toJson(const WorkflowStepExecution& step)
     return json::Value(std::move(obj));
 }
 
+WorkflowExecutionStatus executionStatusFromString(const std::string& s)
+{
+    if (s == "Completed")
+        return WorkflowExecutionStatus::Completed;
+    if (s == "Failed")
+        return WorkflowExecutionStatus::Failed;
+    if (s == "Canceled")
+        return WorkflowExecutionStatus::Canceled;
+    return WorkflowExecutionStatus::Running;
+}
+
+StepExecutionStatus stepStatusFromString(const std::string& s)
+{
+    if (s == "Running")
+        return StepExecutionStatus::Running;
+    if (s == "Completed")
+        return StepExecutionStatus::Completed;
+    if (s == "Failed")
+        return StepExecutionStatus::Failed;
+    if (s == "Canceled")
+        return StepExecutionStatus::Canceled;
+    return StepExecutionStatus::Pending;
+}
+
+WorkflowDefinitionKey workflowDefinitionKeyFromJson(const json::Value& v)
+{
+    return WorkflowDefinitionKey{
+        .workflowName = v.at(kWorkflowName).asString(),
+        .workflowVersion = v.at(kWorkflowVersion).asInt(),
+    };
+}
+
+WorkflowExecution workflowExecutionFromJson(const json::Value& v)
+{
+    WorkflowExecution exec;
+    exec.workflowExecutionId = v.at(kWorkflowExecutionId).asString();
+    exec.workflowName = v.at(kWorkflowName).asString();
+    exec.workflowVersion = v.at(kWorkflowVersion).asInt();
+    exec.status = executionStatusFromString(v.at(kStatus).asString());
+    exec.currentStepName = v.at(kCurrentStepName).asString();
+    exec.input = v.at(kInput);
+    exec.state = v.at(kState);
+    exec.currentStepAttempt = v.at(kCurrentStepAttempt).asInt();
+
+    if (v.contains(kFailureReason) && !v.at(kFailureReason).isNull())
+        exec.failureReason = v.at(kFailureReason).asString();
+
+    if (v.contains(kStartedAt) && !v.at(kStartedAt).isNull())
+        exec.startedAt = fromIso8601(v.at(kStartedAt).asString());
+
+    if (v.contains(kCompletedAt) && !v.at(kCompletedAt).isNull())
+        exec.completedAt = fromIso8601(v.at(kCompletedAt).asString());
+
+    return exec;
+}
+
+WorkflowStepExecution workflowStepExecutionFromJson(const json::Value& v)
+{
+    WorkflowStepExecution step;
+    step.workflowExecutionId = v.at(kWorkflowExecutionId).asString();
+    step.workflowName = v.at(kWorkflowName).asString();
+    step.workflowVersion = v.at(kWorkflowVersion).asInt();
+    step.stepName = v.at(kStepName).asString();
+    step.attempt = v.at(kAttempt).asInt();
+    step.status = stepStatusFromString(v.at(kStatus).asString());
+
+    if (v.contains(kWorkerId) && !v.at(kWorkerId).isNull())
+        step.workerId = v.at(kWorkerId).asString();
+
+    if (v.contains(kLeaseExpiresAt) && !v.at(kLeaseExpiresAt).isNull())
+        step.leaseExpiresAt = fromIso8601(v.at(kLeaseExpiresAt).asString());
+
+    if (v.contains(kFailureReason) && !v.at(kFailureReason).isNull())
+        step.failureReason = v.at(kFailureReason).asString();
+
+    if (v.contains(kCreatedAt) && !v.at(kCreatedAt).isNull())
+        step.createdAt = fromIso8601(v.at(kCreatedAt).asString());
+
+    if (v.contains(kStartedAt) && !v.at(kStartedAt).isNull())
+        step.startedAt = fromIso8601(v.at(kStartedAt).asString());
+
+    if (v.contains(kCompletedAt) && !v.at(kCompletedAt).isNull())
+        step.completedAt = fromIso8601(v.at(kCompletedAt).asString());
+
+    if (v.contains(kInput))
+        step.input = v.at(kInput);
+
+    if (v.contains(kState))
+        step.state = v.at(kState);
+
+    if (v.contains(kOutput))
+        step.output = v.at(kOutput);
+
+    return step;
+}
+
+ValidationResult validationResultFromJson(const json::Value& v)
+{
+    ValidationResult result;
+    result.valid = v.at(kValid).asBool();
+
+    for (const auto& e : v.at(kErrors).asArray())
+    {
+        result.errors.push_back(e.asString());
+    }
+
+    return result;
+}
+
 json::Value toJson(const ValidationResult& result)
 {
     json::Value::Array errors;

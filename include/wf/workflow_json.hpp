@@ -30,10 +30,13 @@ struct ValidationResult
 std::string toIso8601(std::chrono::system_clock::time_point tp);
 std::chrono::system_clock::time_point fromIso8601(const std::string& s);
 
-// Enum serialization
+// Enum serialization / deserialization
 
 std::string toString(WorkflowExecutionStatus status);
 std::string toString(StepExecutionStatus status);
+
+WorkflowExecutionStatus executionStatusFromString(const std::string& s);
+StepExecutionStatus stepStatusFromString(const std::string& s);
 
 // Domain type serialization
 
@@ -43,6 +46,13 @@ json::Value toJson(const WorkflowDefinitionKey& key);
 json::Value toJson(const WorkflowExecution& exec);
 json::Value toJson(const WorkflowStepExecution& step);
 json::Value toJson(const ValidationResult& result);
+
+// Domain type deserialization
+
+WorkflowDefinitionKey workflowDefinitionKeyFromJson(const json::Value& v);
+WorkflowExecution workflowExecutionFromJson(const json::Value& v);
+WorkflowStepExecution workflowStepExecutionFromJson(const json::Value& v);
+ValidationResult validationResultFromJson(const json::Value& v);
 
 // Workflow definition parsing and validation
 
