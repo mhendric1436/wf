@@ -74,6 +74,7 @@ inline WorkflowDefinitionRow toRow(const WorkflowDefinition& definition)
     row.workflowVersion = definition.workflowVersion;
     row.startWorkflowStepName = definition.startWorkflowStepName;
     row.expectedExecutionTime = definition.expectedExecutionTime;
+    row.singleton = definition.singleton;
     row.steps.reserve(definition.steps.size());
 
     for (const auto& step : definition.steps)
@@ -91,6 +92,7 @@ inline WorkflowDefinition fromRow(const WorkflowDefinitionRow& row)
     definition.workflowVersion = static_cast<int>(row.workflowVersion);
     definition.startWorkflowStepName = row.startWorkflowStepName;
     definition.expectedExecutionTime = row.expectedExecutionTime;
+    definition.singleton = row.singleton.value_or(false);
     definition.steps.reserve(row.steps.size());
 
     for (const auto& step : row.steps)

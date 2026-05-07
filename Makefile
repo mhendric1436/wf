@@ -34,6 +34,7 @@ TABLE_SCHEMA_FILES := $(shell find src/tables/schemas -name '*.mt.json' | sort)
 GENERATED_TABLE_HEADERS := \
 	src/tables/generated/workflow_definition_row.hpp \
 	src/tables/generated/workflow_execution_row.hpp \
+	src/tables/generated/workflow_singleton_lock_row.hpp \
 	src/tables/generated/workflow_step_execution_row.hpp
 CODEGEN_CHECK_DIR := $(BUILD_DIR)/codegen-check
 
@@ -85,6 +86,9 @@ codegen-check:
 	$(PYTHON) $(MT_CODEGEN) src/tables/schemas/workflow_execution.mt.json -o $(CODEGEN_CHECK_DIR)/workflow_execution_row.hpp
 	$(FORMAT) -i $(CODEGEN_CHECK_DIR)/workflow_execution_row.hpp
 	diff -u src/tables/generated/workflow_execution_row.hpp $(CODEGEN_CHECK_DIR)/workflow_execution_row.hpp
+	$(PYTHON) $(MT_CODEGEN) src/tables/schemas/workflow_singleton_lock.mt.json -o $(CODEGEN_CHECK_DIR)/workflow_singleton_lock_row.hpp
+	$(FORMAT) -i $(CODEGEN_CHECK_DIR)/workflow_singleton_lock_row.hpp
+	diff -u src/tables/generated/workflow_singleton_lock_row.hpp $(CODEGEN_CHECK_DIR)/workflow_singleton_lock_row.hpp
 	$(PYTHON) $(MT_CODEGEN) src/tables/schemas/workflow_step_execution.mt.json -o $(CODEGEN_CHECK_DIR)/workflow_step_execution_row.hpp
 	$(FORMAT) -i $(CODEGEN_CHECK_DIR)/workflow_step_execution_row.hpp
 	diff -u src/tables/generated/workflow_step_execution_row.hpp $(CODEGEN_CHECK_DIR)/workflow_step_execution_row.hpp
@@ -94,6 +98,10 @@ src/tables/generated/workflow_definition_row.hpp: src/tables/schemas/workflow_de
 	$(FORMAT) -i $@
 
 src/tables/generated/workflow_execution_row.hpp: src/tables/schemas/workflow_execution.mt.json
+	$(PYTHON) $(MT_CODEGEN) $< -o $@
+	$(FORMAT) -i $@
+
+src/tables/generated/workflow_singleton_lock_row.hpp: src/tables/schemas/workflow_singleton_lock.mt.json
 	$(PYTHON) $(MT_CODEGEN) $< -o $@
 	$(FORMAT) -i $@
 

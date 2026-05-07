@@ -2,6 +2,7 @@
 
 #include "tables/generated/workflow_definition_row.hpp"
 #include "tables/generated/workflow_execution_row.hpp"
+#include "tables/generated/workflow_singleton_lock_row.hpp"
 #include "tables/generated/workflow_step_execution_row.hpp"
 #include "tables/workflow_row_conversions.hpp"
 #include "wf/duration.hpp"
@@ -25,9 +26,18 @@ namespace
 
 using DefinitionTable = mt::Table<WorkflowDefinitionRow, WorkflowDefinitionRowMapping>;
 using ExecutionTable = mt::Table<WorkflowExecutionRow, WorkflowExecutionRowMapping>;
+using SingletonLockTable = mt::Table<WorkflowSingletonLockRow, WorkflowSingletonLockRowMapping>;
 using StepExecutionTable = mt::Table<WorkflowStepExecutionRow, WorkflowStepExecutionRowMapping>;
 
 std::string definitionKey(
+    const std::string& workflowName,
+    int workflowVersion
+)
+{
+    return workflowName + ":" + std::to_string(workflowVersion);
+}
+
+std::string singletonLockKey(
     const std::string& workflowName,
     int workflowVersion
 )
@@ -297,6 +307,16 @@ bool isClaimable(
            stepExecution.leaseExpiresAt.has_value() && stepExecution.leaseExpiresAt.value() <= now;
 }
 
+WorkflowSingletonLockRow makeSingletonLock(const WorkflowExecution& execution)
+{
+    return WorkflowSingletonLockRow{
+        .workflowName = execution.workflowName,
+        .workflowVersion = execution.workflowVersion,
+        .workflowExecutionId = execution.workflowExecutionId,
+        .createdAt = toStorageTime(execution.startedAt),
+    };
+}
+
 } // namespace
 
 struct WorkflowOrchestrator::Tables
@@ -310,6 +330,9 @@ struct WorkflowOrchestrator::Tables
           executions(provider.table<
                      WorkflowExecutionRow,
                      WorkflowExecutionRowMapping>()),
+          singletonLocks(provider.table<
+                         WorkflowSingletonLockRow,
+                         WorkflowSingletonLockRowMapping>()),
           steps(provider.table<
                 WorkflowStepExecutionRow,
                 WorkflowStepExecutionRowMapping>())
@@ -320,6 +343,7 @@ struct WorkflowOrchestrator::Tables
     mt::TransactionProvider transactions;
     DefinitionTable definitions;
     ExecutionTable executions;
+    SingletonLockTable singletonLocks;
     StepExecutionTable steps;
 };
 
@@ -392,6 +416,27 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
     execution.state = mt::Json(mt::Json::Object{});
     execution.currentStepAttempt = 0;
     execution.startedAt = nowForStorage();
+
+    if (workflowDefinition.singleton)
+    {
+        const auto lock =
+            tables_->singletonLocks.get(tx, singletonLockKey(workflowName, workflowVersion));
+
+        if (lock.has_value())
+        {
+            const auto existingExecution = tables_->executions.get(tx, lock->workflowExecutionId);
+
+            if (existingExecution.has_value() &&
+                fromRow(*existingExecution).status == WorkflowExecutionStatus::Running)
+            {
+                throw std::runtime_error(
+                    "singleton workflow execution already running: " + workflowName
+                );
+            }
+        }
+
+        tables_->singletonLocks.put(tx, makeSingletonLock(execution));
+    }
 
     tables_->executions.put(tx, toRow(execution));
     tables_->steps.put(

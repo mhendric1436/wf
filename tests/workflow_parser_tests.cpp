@@ -87,6 +87,7 @@ TEST_CASE("valid workflow JSON parses into workflow definition")
     REQUIRE(workflow.workflowVersion == 1);
     REQUIRE(workflow.startWorkflowStepName == "validateOrder");
     REQUIRE(workflow.expectedExecutionTime == "PT10M");
+    REQUIRE_FALSE(workflow.singleton);
 
     REQUIRE(workflow.steps.size() == 3);
 
@@ -103,6 +104,34 @@ TEST_CASE("valid workflow JSON parses into workflow definition")
     REQUIRE(workflow.steps[2].name == "shipOrder");
     REQUIRE(workflow.steps[2].expectedExecutionTime.value() == "PT5M");
     REQUIRE(workflow.steps[2].maxRetries.value() == 1);
+}
+
+TEST_CASE("workflow singleton flag is optional and parses when present")
+{
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["singleton"] = true;
+    auto value = mt::Json(std::move(obj));
+
+    const auto result = validateWorkflowJson(value);
+    const auto workflow = parseWorkflowDefinition(value);
+    const auto json = workflow::toJson(workflow);
+
+    REQUIRE(result.valid);
+    REQUIRE(workflow.singleton);
+    REQUIRE(json.at("singleton").as_bool());
+}
+
+TEST_CASE("workflow singleton flag must be a boolean")
+{
+    auto parsed = mt::JsonParser(VALID_WORKFLOW_JSON).parse();
+    mt::Json::Object obj = parsed.as_object();
+    obj["singleton"] = "true";
+    auto value = mt::Json(std::move(obj));
+
+    const auto result = validateWorkflowJson(value);
+
+    REQUIRE_FALSE(result.valid);
 }
 
 TEST_CASE("workflow name is required")

@@ -24,6 +24,7 @@ struct WorkflowDefinition
     int workflowVersion;
     std::string startWorkflowStepName;
     std::string expectedExecutionTime;
+    bool singleton = false;
     std::vector<WorkflowStep> steps;
 };
 

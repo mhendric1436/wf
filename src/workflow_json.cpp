@@ -27,6 +27,7 @@ constexpr const char* kLeaseExpiresAt = "leaseExpiresAt";
 constexpr const char* kMaxRetries = "maxRetries";
 constexpr const char* kName = "name";
 constexpr const char* kOutput = "output";
+constexpr const char* kSingleton = "singleton";
 constexpr const char* kStartedAt = "startedAt";
 constexpr const char* kStartWorkflowStepName = "startWorkflowStepName";
 constexpr const char* kState = "state";
@@ -209,13 +210,32 @@ void validateOptionalNonNegativeIntegerField(
     }
 }
 
+void validateOptionalBooleanField(
+    const mt::Json& value,
+    workflow::ValidationResult& result,
+    const std::string& fieldName,
+    const std::string& path
+)
+{
+    if (!value.is_object() || !value.as_object().count(fieldName))
+    {
+        return;
+    }
+
+    if (!value.at(fieldName).is_bool())
+    {
+        result.addError(path + "." + fieldName + " must be a boolean");
+    }
+}
+
 void validateNoAdditionalTopLevelFields(
     const mt::Json& value,
     workflow::ValidationResult& result
 )
 {
     static const std::set<std::string> allowedFields = {
-        kWorkflowName, kWorkflowVersion, kStartWorkflowStepName, kExpectedExecutionTime, kSteps,
+        kWorkflowName,          kWorkflowVersion, kStartWorkflowStepName,
+        kExpectedExecutionTime, kSingleton,       kSteps,
     };
 
     for (const auto& [key, ignored] : value.as_object())
@@ -350,6 +370,7 @@ mt::Json toJson(const WorkflowDefinition& def)
     obj[kWorkflowVersion] = def.workflowVersion;
     obj[kStartWorkflowStepName] = def.startWorkflowStepName;
     obj[kExpectedExecutionTime] = def.expectedExecutionTime;
+    obj[kSingleton] = def.singleton;
     obj[kSteps] = mt::Json(std::move(steps));
     return mt::Json(std::move(obj));
 }
@@ -586,6 +607,7 @@ ValidationResult validateWorkflowJson(const mt::Json& value)
     validateRequiredNameField(value, result, kWorkflowName, kRootPath);
     validateRequiredStringField(value, result, kStartWorkflowStepName, kRootPath);
     validateRequiredDurationField(value, result, kExpectedExecutionTime, kRootPath);
+    validateOptionalBooleanField(value, result, kSingleton, kRootPath);
 
     requireField(value, result, kWorkflowVersion, kRootPath);
 
@@ -690,6 +712,8 @@ WorkflowDefinition parseWorkflowDefinition(const mt::Json& value)
     workflow.workflowVersion = static_cast<int>(value.at(kWorkflowVersion).as_int64());
     workflow.startWorkflowStepName = value.at(kStartWorkflowStepName).as_string();
     workflow.expectedExecutionTime = value.at(kExpectedExecutionTime).as_string();
+    workflow.singleton =
+        value.as_object().count(kSingleton) ? value.at(kSingleton).as_bool() : false;
 
     for (const auto& stepValue : value.at(kSteps).as_array())
     {

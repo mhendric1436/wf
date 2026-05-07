@@ -139,6 +139,7 @@ Example:
   "workflowVersion": 1,
   "startWorkflowStepName": "validate-order",
   "expectedExecutionTime": "PT5M",
+  "singleton": true,
   "steps": [
     {
       "name": "validate-order",
@@ -177,6 +178,9 @@ workflowName + workflowVersion
 
 The `startWorkflowStepName` is part of the workflow definition content and must match one of the declared step names.
 
+`singleton` is optional and defaults to `false`. When it is `true`, `wf` permits only one
+`Running` execution for the same `workflowName` and `workflowVersion` at a time.
+
 ## Workflow step fields
 
 Each workflow step currently has these defined fields:
@@ -212,6 +216,7 @@ The parser/validator currently enforces:
 - `workflowVersion` must be an integer greater than or equal to `1`
 - `startWorkflowStepName` is required
 - top-level `expectedExecutionTime` is required
+- top-level `singleton`, when present, must be a boolean
 - duration fields must use supported ISO-8601 duration strings, such as `PT30S`, `PT5M`, `PT1H`
 - `steps` is required
 - `steps` must contain at least one step
@@ -314,6 +319,7 @@ WorkflowService
     ├── mt::TransactionProvider
     ├── mt::Table<WorkflowDefinitionRow, WorkflowDefinitionRowMapping>
     ├── mt::Table<WorkflowExecutionRow, WorkflowExecutionRowMapping>
+    ├── mt::Table<WorkflowSingletonLockRow, WorkflowSingletonLockRowMapping>
     ├── mt::Table<WorkflowStepExecutionRow, WorkflowStepExecutionRowMapping>
     └── WorkflowLogic
 ```
@@ -379,6 +385,33 @@ auto execution = transactions.retry(
 
 Use the non-transaction overloads for normal wf-only operations. Use the `mt::Transaction&`
 overloads when wf must participate in a larger atomic operation owned by the caller.
+
+## Singleton workflows
+
+A workflow definition can opt into singleton execution:
+
+```json
+{
+  "workflowName": "daily-close",
+  "workflowVersion": 1,
+  "singleton": true,
+  "startWorkflowStepName": "close-books",
+  "expectedExecutionTime": "PT30M",
+  "steps": [
+    {"name": "close-books", "expectedExecutionTime": "PT10M", "maxRetries": 1}
+  ]
+}
+```
+
+For singleton definitions, `startWorkflow` reads and writes a private `workflow_singleton_locks`
+row in the same `mt` transaction that creates the execution and initial step. Concurrent starts for
+the same `workflowName` and `workflowVersion` conflict through `mt` OCC; after retry, the losing
+caller observes the already-running execution and gets an error.
+
+The singleton lock points at the latest singleton execution. It is not released by step lease
+expiration alone. If a lease expires and the sweep retries the step, the workflow execution remains
+`Running` and the singleton stays occupied. A new execution can start after the referenced execution
+reaches `Completed`, `Failed`, or `Canceled`.
 
 ## Background lease sweep
 
@@ -622,6 +655,7 @@ The generated mappings define table names, row keys, JSON serialization, and JSO
 ```text
 workflow_definitions
 workflow_executions
+workflow_singleton_locks
 workflow_step_executions
 ```
 
@@ -630,6 +664,7 @@ Row keys:
 ```text
 WorkflowDefinition      workflowName:workflowVersion
 WorkflowExecution       workflowExecutionId
+WorkflowSingletonLock   workflowName:workflowVersion
 WorkflowStepExecution   workflowExecutionId:stepName:attempt
 ```
 
@@ -986,6 +1021,7 @@ Implemented:
 - `mt::Table` storage for workflow definitions, executions, and step executions
 - `mt::TransactionProvider`-backed workflow state mutations
 - OCC-based atomic `pollAndClaim`
+- singleton workflow enforcement
 - internal lease duration calculation from `WorkflowStep.expectedExecutionTime`
 - lease expiration and reclaim behavior
 - `keepAliveWorkflowStep`

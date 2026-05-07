@@ -3,6 +3,7 @@
 #include "mt/core.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -29,6 +30,7 @@ struct WorkflowDefinitionRow
     std::int64_t workflowVersion;
     std::string startWorkflowStepName;
     std::string expectedExecutionTime;
+    std::optional<bool> singleton;
     std::vector<WorkflowDefinitionStepRow> steps;
 
     friend bool operator==(
@@ -46,6 +48,7 @@ struct WorkflowDefinitionRowMapping
     static constexpr std::string_view field_workflowVersion = "workflowVersion";
     static constexpr std::string_view field_startWorkflowStepName = "startWorkflowStepName";
     static constexpr std::string_view field_expectedExecutionTime = "expectedExecutionTime";
+    static constexpr std::string_view field_singleton = "singleton";
     static constexpr std::string_view field_steps = "steps";
     static constexpr std::string_view field_name = "name";
     static constexpr std::string_view field_maxRetries = "maxRetries";
@@ -64,6 +67,8 @@ struct WorkflowDefinitionRowMapping
             mt::FieldSpec::int64(std::string(field_workflowVersion)).mark_required(true),
             mt::FieldSpec::string(std::string(field_startWorkflowStepName)).mark_required(true),
             mt::FieldSpec::string(std::string(field_expectedExecutionTime)).mark_required(true),
+            mt::FieldSpec::optional(std::string(field_singleton), mt::FieldType::Bool)
+                .mark_required(true),
             mt::FieldSpec::array_object(
                 std::string(field_steps),
                 {mt::FieldSpec::string(std::string(field_name)).mark_required(true),
@@ -88,6 +93,8 @@ struct WorkflowDefinitionRowMapping
              {std::string(field_workflowVersion), row.workflowVersion},
              {std::string(field_startWorkflowStepName), row.startWorkflowStepName},
              {std::string(field_expectedExecutionTime), row.expectedExecutionTime},
+             {std::string(field_singleton),
+              row.singleton ? mt::Json(*row.singleton) : mt::Json::null()},
              {std::string(field_steps), to_json_array_WorkflowDefinitionStepRow(row.steps)}}
         );
     }
@@ -154,6 +161,9 @@ struct WorkflowDefinitionRowMapping
             .workflowVersion = json[std::string(field_workflowVersion)].as_int64(),
             .startWorkflowStepName = json[std::string(field_startWorkflowStepName)].as_string(),
             .expectedExecutionTime = json[std::string(field_expectedExecutionTime)].as_string(),
+            .singleton = json[std::string(field_singleton)].is_null()
+                             ? std::nullopt
+                             : std::optional<bool>(json[std::string(field_singleton)].as_bool()),
             .steps = from_json_array_WorkflowDefinitionStepRow(json[std::string(field_steps)])
         };
     }

@@ -9,6 +9,7 @@
     {"name": "workflowVersion", "type": "int64", "required": true},
     {"name": "startWorkflowStepName", "type": "string", "required": true},
     {"name": "expectedExecutionTime", "type": "string", "required": true},
+    {"name": "singleton", "type": "optional", "value_type": "bool"},
     {
       "name": "steps",
       "type": "array",

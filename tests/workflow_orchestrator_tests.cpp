@@ -363,6 +363,13 @@ WorkflowStepExecution claimStartStep(
     return claimed[0];
 }
 
+void expireLease(
+    TestContext& context,
+    const std::string& workflowExecutionId,
+    const std::string& stepName,
+    int attempt
+);
+
 } // namespace
 
 TEST_CASE("orchestrator start creates workflow execution and initial pending step")
@@ -394,6 +401,82 @@ TEST_CASE("orchestrator start creates workflow execution and initial pending ste
     REQUIRE(stepExecution->stepName == "validateOrder");
     REQUIRE(stepExecution->attempt == 0);
     REQUIRE(stepExecution->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("non-singleton workflow allows multiple running executions")
+{
+    TestContext context;
+
+    const auto first = startWorkflow(context);
+    const auto second = startWorkflow(context);
+
+    REQUIRE(first.workflowExecutionId != second.workflowExecutionId);
+    REQUIRE(first.status == WorkflowExecutionStatus::Running);
+    REQUIRE(second.status == WorkflowExecutionStatus::Running);
+}
+
+TEST_CASE("singleton workflow rejects a second running execution")
+{
+    auto definition = makeWorkflowDefinition();
+    definition.singleton = true;
+    TestContext context(definition);
+
+    startWorkflow(context);
+
+    REQUIRE_THROWS_AS(startWorkflow(context), std::runtime_error);
+}
+
+TEST_CASE("singleton workflow allows a new execution after completion")
+{
+    auto definition = makeWorkflowDefinition();
+    definition.singleton = true;
+    TestContext context(definition, {completeWorkflowDecision()});
+
+    const auto first = startWorkflow(context);
+    claimStartStep(context);
+    const auto completed = context.orchestrator.completeStep(
+        first.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
+    );
+
+    const auto second = startWorkflow(context);
+
+    REQUIRE(completed.status == WorkflowExecutionStatus::Completed);
+    REQUIRE(second.workflowExecutionId != first.workflowExecutionId);
+    REQUIRE(second.status == WorkflowExecutionStatus::Running);
+}
+
+TEST_CASE("singleton workflow remains occupied when lease expiry retries the execution")
+{
+    auto definition = makeWorkflowDefinition(2);
+    definition.singleton = true;
+    TestContext context(definition);
+
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(result.retriedCount == 1);
+    REQUIRE_THROWS_AS(startWorkflow(context), std::runtime_error);
+}
+
+TEST_CASE("singleton workflow allows a new execution after lease expiry fails the execution")
+{
+    auto definition = makeWorkflowDefinition(0);
+    definition.singleton = true;
+    TestContext context(definition);
+
+    const auto first = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, first.workflowExecutionId, "validateOrder", 0);
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+    const auto second = startWorkflow(context);
+
+    REQUIRE(result.failedCount == 1);
+    REQUIRE(second.workflowExecutionId != first.workflowExecutionId);
+    REQUIRE(second.status == WorkflowExecutionStatus::Running);
 }
 
 TEST_CASE("orchestrator poll-and-claim claims a pending step with a lease")
@@ -1336,4 +1419,27 @@ TEST_CASE("transaction-aware methods do not retry caller transaction conflicts")
 
     REQUIRE_THROWS_AS(tx.commit(), mt::TransactionConflict);
     REQUIRE_FALSE(context.orchestrator.getWorkflowExecution(execution.workflowExecutionId));
+}
+
+TEST_CASE("transaction-aware singleton starts conflict on the singleton lock row")
+{
+    auto definition = makeWorkflowDefinition();
+    definition.singleton = true;
+    TestContext context(definition);
+    mt::TransactionProvider transactions{context.database};
+
+    auto tx1 = transactions.begin();
+    auto tx2 = transactions.begin();
+
+    const auto first =
+        context.orchestrator.startWorkflow(tx1, "orderProcessing", 1, mt::Json(mt::Json::Object{}));
+    context.orchestrator.startWorkflow(tx2, "orderProcessing", 1, mt::Json(mt::Json::Object{}));
+
+    tx1.commit();
+
+    REQUIRE_THROWS_AS(tx2.commit(), mt::TransactionConflict);
+
+    const auto stored = context.orchestrator.getWorkflowExecution(first.workflowExecutionId);
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->status == WorkflowExecutionStatus::Running);
 }

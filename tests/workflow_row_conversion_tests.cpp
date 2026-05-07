@@ -22,6 +22,7 @@ TEST_CASE("workflow definition row conversion preserves steps and generated comp
     definition.workflowVersion = 7;
     definition.startWorkflowStepName = "validateOrder";
     definition.expectedExecutionTime = "PT10M";
+    definition.singleton = true;
     definition.steps = {
         WorkflowStep{
             .name = "validateOrder",
@@ -41,6 +42,7 @@ TEST_CASE("workflow definition row conversion preserves steps and generated comp
 
     REQUIRE(WorkflowDefinitionRowMapping::key(row) == "orderProcessing:7");
     REQUIRE(row.workflowVersion == 7);
+    REQUIRE(row.singleton);
     REQUIRE(row.steps.size() == 2);
     REQUIRE(row.steps[0].additionalFields.at("type").as_string() == "validation");
     REQUIRE(row.steps[1].maxRetries == std::nullopt);
@@ -52,6 +54,7 @@ TEST_CASE("workflow definition row conversion preserves steps and generated comp
     REQUIRE(decoded.workflowName == definition.workflowName);
     REQUIRE(decoded.workflowVersion == definition.workflowVersion);
     REQUIRE(decoded.startWorkflowStepName == definition.startWorkflowStepName);
+    REQUIRE(decoded.singleton);
     REQUIRE(decoded.steps.size() == definition.steps.size());
     REQUIRE(decoded.steps[0].maxRetries == 2);
     REQUIRE(decoded.steps[0].additionalFields.at("required").as_bool());
