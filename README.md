@@ -611,19 +611,6 @@ wf serve --port 8080 --db /path/to/wf.db
 
 Tests primarily use the `mt` in-memory backend for orchestrator, service, worker, HTTP, and transport behavior.
 
-## Legacy store code
-
-The repository still contains the earlier wf-owned store interfaces and memory/SQLite store implementations under:
-
-```text
-include/wf/store/
-include/wf/backend/
-src/backend/
-tests/backend/
-```
-
-These are no longer used by `WorkflowOrchestrator` or `WorkflowService`; they remain only as transitional code and tests until the cleanup step removes them.
-
 ## HTTP server
 
 `WorkflowHttpServer` exposes `WorkflowService` as an HTTP REST API. It uses cpp-httplib (single-header, vendored at `third_party/httplib/httplib.h`) behind a pimpl to keep the large header out of public interfaces.
@@ -981,8 +968,6 @@ Implemented:
 - `-MMD -MP` header dependency tracking
 - parser tests
 - duration tests
-- legacy memory backend tests
-- legacy SQLite backend tests
 - lease tests
 - orchestrator tests
 - service tests
@@ -995,10 +980,8 @@ Implemented:
 
 ## Recommended next steps
 
-1. Remove the legacy wf-owned store interfaces and memory/SQLite store implementations after any remaining callers are migrated to `mt`.
+1. Update PlantUML diagrams to reflect the current architecture: `mt::Database`, typed tables, OCC transactions, HTTP server, worker pool, and background sweep.
 
-2. Update PlantUML diagrams to reflect the current architecture: `mt::Database`, typed tables, OCC transactions, HTTP server, worker pool, and background sweep.
+2. Add scripted `WorkflowLogic` driven from workflow definition JSON if wf should support simple declarative routing in addition to application-owned `WorkflowLogic`.
 
-3. Add scripted `WorkflowLogic` driven from workflow definition JSON if wf should support simple declarative routing in addition to application-owned `WorkflowLogic`.
-
-4. Add focused tests for conflict/retry behavior under `mt::TransactionConflict` once the legacy backend tests are retired.
+3. Add focused tests for conflict/retry behavior under `mt::TransactionConflict`.

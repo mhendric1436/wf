@@ -62,6 +62,7 @@ cli: $(WF_BIN)
 
 $(LIB): format $(OBJ)
 	@mkdir -p $(dir $@)
+	rm -f $@
 	ar rcs $@ $(OBJ)
 
 $(TEST_BIN): $(LIB) $(TEST_OBJ) $(CATCH_OBJ)

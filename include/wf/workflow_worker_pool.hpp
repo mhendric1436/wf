@@ -1,7 +1,7 @@
 #pragma once
 
-#include "wf/store/workflow_definition_store.hpp"
 #include "wf/workflow_client.hpp"
+#include "wf/workflow_definition.hpp"
 #include "wf/workflow_worker.hpp"
 
 #include <chrono>
