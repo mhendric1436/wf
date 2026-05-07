@@ -39,95 +39,143 @@ struct WorkflowStepExecutionRowMapping
 {
     static constexpr std::string_view table_name = "workflow_step_executions";
     static constexpr int schema_version = 1;
+    static constexpr std::string_view key_separator = ":";
+    static constexpr std::string_view field_workflowExecutionId = "workflowExecutionId";
+    static constexpr std::string_view field_workflowName = "workflowName";
+    static constexpr std::string_view field_workflowVersion = "workflowVersion";
+    static constexpr std::string_view field_stepName = "stepName";
+    static constexpr std::string_view field_attempt = "attempt";
+    static constexpr std::string_view field_status = "status";
+    static constexpr std::string_view field_workerId = "workerId";
+    static constexpr std::string_view field_leaseExpiresAt = "leaseExpiresAt";
+    static constexpr std::string_view field_failureReason = "failureReason";
+    static constexpr std::string_view field_createdAt = "createdAt";
+    static constexpr std::string_view field_startedAt = "startedAt";
+    static constexpr std::string_view field_completedAt = "completedAt";
+    static constexpr std::string_view field_input = "input";
+    static constexpr std::string_view field_state = "state";
+    static constexpr std::string_view field_output = "output";
     static constexpr std::string_view key_field = "workflowExecutionId:stepName:attempt";
+    static constexpr std::string_view index_0_name = "idx_step_workflow_name";
+    static constexpr std::string_view index_0_path = "$.workflowName";
+    static constexpr std::string_view index_1_name = "idx_step_workflow_version";
+    static constexpr std::string_view index_1_path = "$.workflowVersion";
+    static constexpr std::string_view index_2_name = "idx_step_status";
+    static constexpr std::string_view index_2_path = "$.status";
 
     static std::string key(const WorkflowStepExecutionRow& row)
     {
-        return row.workflowExecutionId + ":" + row.stepName + ":" + std::to_string(row.attempt);
+        return row.workflowExecutionId + std::string(key_separator) + row.stepName +
+               std::string(key_separator) + std::to_string(row.attempt);
     }
 
     static std::vector<mt::FieldSpec> fields()
     {
         return {
-            mt::FieldSpec::string("workflowExecutionId").mark_required(true),
-            mt::FieldSpec::string("workflowName").mark_required(true),
-            mt::FieldSpec::int64("workflowVersion").mark_required(true),
-            mt::FieldSpec::string("stepName").mark_required(true),
-            mt::FieldSpec::int64("attempt").mark_required(true),
-            mt::FieldSpec::string("status").mark_required(true),
-            mt::FieldSpec::optional("workerId", mt::FieldType::String).mark_required(true),
-            mt::FieldSpec::optional("leaseExpiresAt", mt::FieldType::String).mark_required(true),
-            mt::FieldSpec::optional("failureReason", mt::FieldType::String).mark_required(true),
-            mt::FieldSpec::optional("createdAt", mt::FieldType::String).mark_required(true),
-            mt::FieldSpec::optional("startedAt", mt::FieldType::String).mark_required(true),
-            mt::FieldSpec::optional("completedAt", mt::FieldType::String).mark_required(true),
-            mt::FieldSpec::json("input").mark_required(false).with_default(mt::Json::object({})),
-            mt::FieldSpec::json("state").mark_required(false).with_default(mt::Json::object({})),
-            mt::FieldSpec::json("output").mark_required(false).with_default(mt::Json::object({}))
+            mt::FieldSpec::string(std::string(field_workflowExecutionId)).mark_required(true),
+            mt::FieldSpec::string(std::string(field_workflowName)).mark_required(true),
+            mt::FieldSpec::int64(std::string(field_workflowVersion)).mark_required(true),
+            mt::FieldSpec::string(std::string(field_stepName)).mark_required(true),
+            mt::FieldSpec::int64(std::string(field_attempt)).mark_required(true),
+            mt::FieldSpec::string(std::string(field_status)).mark_required(true),
+            mt::FieldSpec::optional(std::string(field_workerId), mt::FieldType::String)
+                .mark_required(true),
+            mt::FieldSpec::optional(std::string(field_leaseExpiresAt), mt::FieldType::String)
+                .mark_required(true),
+            mt::FieldSpec::optional(std::string(field_failureReason), mt::FieldType::String)
+                .mark_required(true),
+            mt::FieldSpec::optional(std::string(field_createdAt), mt::FieldType::String)
+                .mark_required(true),
+            mt::FieldSpec::optional(std::string(field_startedAt), mt::FieldType::String)
+                .mark_required(true),
+            mt::FieldSpec::optional(std::string(field_completedAt), mt::FieldType::String)
+                .mark_required(true),
+            mt::FieldSpec::json(std::string(field_input))
+                .mark_required(false)
+                .with_default(mt::Json::object({})),
+            mt::FieldSpec::json(std::string(field_state))
+                .mark_required(false)
+                .with_default(mt::Json::object({})),
+            mt::FieldSpec::json(std::string(field_output))
+                .mark_required(false)
+                .with_default(mt::Json::object({}))
         };
     }
 
     static mt::Json to_json(const WorkflowStepExecutionRow& row)
     {
         return mt::Json::object(
-            {{"workflowExecutionId", row.workflowExecutionId},
-             {"workflowName", row.workflowName},
-             {"workflowVersion", row.workflowVersion},
-             {"stepName", row.stepName},
-             {"attempt", row.attempt},
-             {"status", row.status},
-             {"workerId", row.workerId ? mt::Json(*row.workerId) : mt::Json::null()},
-             {"leaseExpiresAt",
+            {{std::string(field_workflowExecutionId), row.workflowExecutionId},
+             {std::string(field_workflowName), row.workflowName},
+             {std::string(field_workflowVersion), row.workflowVersion},
+             {std::string(field_stepName), row.stepName},
+             {std::string(field_attempt), row.attempt},
+             {std::string(field_status), row.status},
+             {std::string(field_workerId),
+              row.workerId ? mt::Json(*row.workerId) : mt::Json::null()},
+             {std::string(field_leaseExpiresAt),
               row.leaseExpiresAt ? mt::Json(*row.leaseExpiresAt) : mt::Json::null()},
-             {"failureReason", row.failureReason ? mt::Json(*row.failureReason) : mt::Json::null()},
-             {"createdAt", row.createdAt ? mt::Json(*row.createdAt) : mt::Json::null()},
-             {"startedAt", row.startedAt ? mt::Json(*row.startedAt) : mt::Json::null()},
-             {"completedAt", row.completedAt ? mt::Json(*row.completedAt) : mt::Json::null()},
-             {"input", row.input},
-             {"state", row.state},
-             {"output", row.output}}
+             {std::string(field_failureReason),
+              row.failureReason ? mt::Json(*row.failureReason) : mt::Json::null()},
+             {std::string(field_createdAt),
+              row.createdAt ? mt::Json(*row.createdAt) : mt::Json::null()},
+             {std::string(field_startedAt),
+              row.startedAt ? mt::Json(*row.startedAt) : mt::Json::null()},
+             {std::string(field_completedAt),
+              row.completedAt ? mt::Json(*row.completedAt) : mt::Json::null()},
+             {std::string(field_input), row.input},
+             {std::string(field_state), row.state},
+             {std::string(field_output), row.output}}
         );
     }
 
     static WorkflowStepExecutionRow from_json(const mt::Json& json)
     {
         return WorkflowStepExecutionRow{
-            .workflowExecutionId = json["workflowExecutionId"].as_string(),
-            .workflowName = json["workflowName"].as_string(),
-            .workflowVersion = json["workflowVersion"].as_int64(),
-            .stepName = json["stepName"].as_string(),
-            .attempt = json["attempt"].as_int64(),
-            .status = json["status"].as_string(),
-            .workerId = json["workerId"].is_null()
-                            ? std::nullopt
-                            : std::optional<std::string>(json["workerId"].as_string()),
-            .leaseExpiresAt = json["leaseExpiresAt"].is_null()
+            .workflowExecutionId = json[std::string(field_workflowExecutionId)].as_string(),
+            .workflowName = json[std::string(field_workflowName)].as_string(),
+            .workflowVersion = json[std::string(field_workflowVersion)].as_int64(),
+            .stepName = json[std::string(field_stepName)].as_string(),
+            .attempt = json[std::string(field_attempt)].as_int64(),
+            .status = json[std::string(field_status)].as_string(),
+            .workerId =
+                json[std::string(field_workerId)].is_null()
+                    ? std::nullopt
+                    : std::optional<std::string>(json[std::string(field_workerId)].as_string()),
+            .leaseExpiresAt = json[std::string(field_leaseExpiresAt)].is_null()
                                   ? std::nullopt
-                                  : std::optional<std::string>(json["leaseExpiresAt"].as_string()),
-            .failureReason = json["failureReason"].is_null()
+                                  : std::optional<std::string>(
+                                        json[std::string(field_leaseExpiresAt)].as_string()
+                                    ),
+            .failureReason = json[std::string(field_failureReason)].is_null()
                                  ? std::nullopt
-                                 : std::optional<std::string>(json["failureReason"].as_string()),
-            .createdAt = json["createdAt"].is_null()
-                             ? std::nullopt
-                             : std::optional<std::string>(json["createdAt"].as_string()),
-            .startedAt = json["startedAt"].is_null()
-                             ? std::nullopt
-                             : std::optional<std::string>(json["startedAt"].as_string()),
-            .completedAt = json["completedAt"].is_null()
-                               ? std::nullopt
-                               : std::optional<std::string>(json["completedAt"].as_string()),
-            .input = json["input"],
-            .state = json["state"],
-            .output = json["output"]
+                                 : std::optional<std::string>(
+                                       json[std::string(field_failureReason)].as_string()
+                                   ),
+            .createdAt =
+                json[std::string(field_createdAt)].is_null()
+                    ? std::nullopt
+                    : std::optional<std::string>(json[std::string(field_createdAt)].as_string()),
+            .startedAt =
+                json[std::string(field_startedAt)].is_null()
+                    ? std::nullopt
+                    : std::optional<std::string>(json[std::string(field_startedAt)].as_string()),
+            .completedAt =
+                json[std::string(field_completedAt)].is_null()
+                    ? std::nullopt
+                    : std::optional<std::string>(json[std::string(field_completedAt)].as_string()),
+            .input = json[std::string(field_input)],
+            .state = json[std::string(field_state)],
+            .output = json[std::string(field_output)]
         };
     }
 
     static std::vector<mt::IndexSpec> indexes()
     {
         return {
-            mt::IndexSpec::json_path_index("idx_step_workflow_name", "$.workflowName"),
-            mt::IndexSpec::json_path_index("idx_step_workflow_version", "$.workflowVersion"),
-            mt::IndexSpec::json_path_index("idx_step_status", "$.status")
+            mt::IndexSpec::json_path_index(std::string(index_0_name), std::string(index_0_path)),
+            mt::IndexSpec::json_path_index(std::string(index_1_name), std::string(index_1_path)),
+            mt::IndexSpec::json_path_index(std::string(index_2_name), std::string(index_2_path))
         };
     }
 };

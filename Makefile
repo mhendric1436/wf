@@ -36,6 +36,10 @@ GENERATED_TABLE_HEADERS := \
 	src/tables/generated/workflow_execution_row.hpp \
 	src/tables/generated/workflow_step_execution_row.hpp
 CODEGEN_CHECK_DIR := $(BUILD_DIR)/codegen-check
+
+ifneq ($(filter 1 true yes,$(FORCE_CODEGEN) $(FORCE)),)
+.PHONY: $(GENERATED_TABLE_HEADERS)
+endif
 MT_SQLITE_SRC := \
 	$(MT_SRC_DIR)/backends/common/schema_codec.cpp \
 	$(MT_SRC_DIR)/backends/sqlite/sqlite_backend.cpp \
@@ -60,7 +64,7 @@ FORMAT_FILES := \
 	$(TEST_SRC) \
 	$(CMD_SRC)
 
-.PHONY: all build test cli codegen codegen-check format format-check docs-png clean help print-files
+.PHONY: all build test cli codegen codegen-force codegen-check format format-check docs-png clean help print-files
 
 all: test cli
 
@@ -69,6 +73,9 @@ build: $(LIB)
 cli: $(WF_BIN)
 
 codegen: $(GENERATED_TABLE_HEADERS)
+
+codegen-force:
+	$(MAKE) codegen FORCE_CODEGEN=1
 
 codegen-check:
 	@mkdir -p $(CODEGEN_CHECK_DIR)
@@ -149,6 +156,7 @@ help:
 	@echo "  make test         Build and run tests"
 	@echo "  make cli          Build the wf CLI binary"
 	@echo "  make codegen      Generate private mt row and mapping headers"
+	@echo "  make codegen-force Force-regenerate private mt row and mapping headers"
 	@echo "  make codegen-check Verify generated mt row headers are current"
 	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
