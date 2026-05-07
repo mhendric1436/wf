@@ -1,4 +1,5 @@
 #include "catch2/catch_amalgamated.hpp"
+#include "mt/backend.hpp"
 #include "mt/backends/memory.hpp"
 #include "mt/database.hpp"
 #include "wf/workflow_logic.hpp"
@@ -10,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -101,19 +103,228 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
     std::size_t nextDecisionIndex_ = 0;
 };
 
+struct ConflictInjectionState
+{
+    std::function<void()> onReadSnapshot;
+    std::function<void()> onQuerySnapshot;
+    int readSnapshotInjections = 0;
+    int querySnapshotInjections = 0;
+};
+
+class ConflictInjectingSession final : public mt::IBackendSession
+{
+  public:
+    ConflictInjectingSession(
+        std::unique_ptr<mt::IBackendSession> inner,
+        std::shared_ptr<ConflictInjectionState> state
+    )
+        : inner_(std::move(inner)),
+          state_(std::move(state))
+    {
+    }
+
+    void begin_backend_transaction() override
+    {
+        inner_->begin_backend_transaction();
+    }
+
+    void commit_backend_transaction() override
+    {
+        inner_->commit_backend_transaction();
+    }
+
+    void abort_backend_transaction() noexcept override
+    {
+        inner_->abort_backend_transaction();
+    }
+
+    mt::Version read_clock() override
+    {
+        return inner_->read_clock();
+    }
+
+    mt::Version lock_clock_and_read() override
+    {
+        return inner_->lock_clock_and_read();
+    }
+
+    mt::Version increment_clock_and_return() override
+    {
+        return inner_->increment_clock_and_return();
+    }
+
+    mt::TxId create_transaction_id() override
+    {
+        return inner_->create_transaction_id();
+    }
+
+    void register_active_transaction(
+        mt::TxId txId,
+        mt::Version version
+    ) override
+    {
+        inner_->register_active_transaction(std::move(txId), version);
+    }
+
+    void unregister_active_transaction(mt::TxId txId) noexcept override
+    {
+        inner_->unregister_active_transaction(std::move(txId));
+    }
+
+    std::optional<mt::DocumentEnvelope> read_snapshot(
+        mt::CollectionId collection,
+        std::string_view key,
+        mt::Version version
+    ) override
+    {
+        auto result = inner_->read_snapshot(collection, key, version);
+        injectReadSnapshotConflict();
+        return result;
+    }
+
+    std::optional<mt::DocumentMetadata> read_current_metadata(
+        mt::CollectionId collection,
+        std::string_view key
+    ) override
+    {
+        return inner_->read_current_metadata(collection, key);
+    }
+
+    mt::QueryResultEnvelope query_snapshot(
+        mt::CollectionId collection,
+        const mt::QuerySpec& query,
+        mt::Version version
+    ) override
+    {
+        auto result = inner_->query_snapshot(collection, query, version);
+        injectQuerySnapshotConflict();
+        return result;
+    }
+
+    mt::QueryMetadataResult query_current_metadata(
+        mt::CollectionId collection,
+        const mt::QuerySpec& query
+    ) override
+    {
+        return inner_->query_current_metadata(collection, query);
+    }
+
+    mt::QueryResultEnvelope list_snapshot(
+        mt::CollectionId collection,
+        const mt::ListOptions& options,
+        mt::Version version
+    ) override
+    {
+        return inner_->list_snapshot(collection, options, version);
+    }
+
+    mt::QueryMetadataResult list_current_metadata(
+        mt::CollectionId collection,
+        const mt::ListOptions& options
+    ) override
+    {
+        return inner_->list_current_metadata(collection, options);
+    }
+
+    void insert_history(
+        mt::CollectionId collection,
+        const mt::WriteEnvelope& write,
+        mt::Version commitVersion
+    ) override
+    {
+        inner_->insert_history(collection, write, commitVersion);
+    }
+
+    void upsert_current(
+        mt::CollectionId collection,
+        const mt::WriteEnvelope& write,
+        mt::Version commitVersion
+    ) override
+    {
+        inner_->upsert_current(collection, write, commitVersion);
+    }
+
+  private:
+    void injectReadSnapshotConflict()
+    {
+        if (!state_->onReadSnapshot)
+        {
+            return;
+        }
+
+        auto callback = std::move(state_->onReadSnapshot);
+        state_->onReadSnapshot = nullptr;
+        ++state_->readSnapshotInjections;
+        callback();
+    }
+
+    void injectQuerySnapshotConflict()
+    {
+        if (!state_->onQuerySnapshot)
+        {
+            return;
+        }
+
+        auto callback = std::move(state_->onQuerySnapshot);
+        state_->onQuerySnapshot = nullptr;
+        ++state_->querySnapshotInjections;
+        callback();
+    }
+
+    std::unique_ptr<mt::IBackendSession> inner_;
+    std::shared_ptr<ConflictInjectionState> state_;
+};
+
+class ConflictInjectingBackend final : public mt::IDatabaseBackend
+{
+  public:
+    std::shared_ptr<ConflictInjectionState> state = std::make_shared<ConflictInjectionState>();
+
+    mt::BackendCapabilities capabilities() const override
+    {
+        return inner_.capabilities();
+    }
+
+    std::unique_ptr<mt::IBackendSession> open_session() override
+    {
+        return std::make_unique<ConflictInjectingSession>(inner_.open_session(), state);
+    }
+
+    void bootstrap(const mt::BootstrapSpec& spec) override
+    {
+        inner_.bootstrap(spec);
+    }
+
+    mt::CollectionDescriptor ensure_collection(const mt::CollectionSpec& spec) override
+    {
+        return inner_.ensure_collection(spec);
+    }
+
+    mt::CollectionDescriptor get_collection(std::string_view logicalName) override
+    {
+        return inner_.get_collection(logicalName);
+    }
+
+  private:
+    mt::backends::memory::MemoryBackend inner_;
+};
+
 struct TestContext
 {
-    std::shared_ptr<mt::backends::memory::MemoryBackend> backend =
-        std::make_shared<mt::backends::memory::MemoryBackend>();
-    mt::Database database{backend};
+    std::shared_ptr<mt::IDatabaseBackend> backend;
+    mt::Database database;
     ScriptedWorkflowLogic logic;
     WorkflowOrchestrator orchestrator;
 
     explicit TestContext(
         WorkflowDefinition definition = makeWorkflowDefinition(),
-        std::vector<NextStepDecision> decisions = {}
+        std::vector<NextStepDecision> decisions = {},
+        std::shared_ptr<mt::IDatabaseBackend> backendArg =
+            std::make_shared<mt::backends::memory::MemoryBackend>()
     )
-        : logic(std::move(decisions)),
+        : backend(std::move(backendArg)),
+          database(backend),
+          logic(std::move(decisions)),
           orchestrator(
               database,
               logic
@@ -753,6 +964,149 @@ TEST_CASE("completeStep retries and succeeds after an mt step row conflict")
     REQUIRE(completedStep.has_value());
     REQUIRE(completedStep->status == StepExecutionStatus::Completed);
     REQUIRE_FALSE(completedStep->leaseExpiresAt.has_value());
+}
+
+TEST_CASE("startWorkflow retries and succeeds after an mt definition row conflict")
+{
+    auto backend = std::make_shared<ConflictInjectingBackend>();
+    TestContext context(makeWorkflowDefinition(), {}, backend);
+
+    backend->state->onReadSnapshot = [&]()
+    {
+        auto definition = context.orchestrator.getWorkflowDefinition("orderProcessing", 1).value();
+        definition.expectedExecutionTime = "PT11M";
+        context.orchestrator.registerWorkflowDefinition(definition);
+    };
+
+    const auto execution = startWorkflow(context);
+
+    REQUIRE(backend->state->readSnapshotInjections == 1);
+    REQUIRE(execution.status == WorkflowExecutionStatus::Running);
+    REQUIRE(execution.currentStepName == "validateOrder");
+
+    const auto initialStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(initialStep.has_value());
+    REQUIRE(initialStep->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("pollAndClaimWorkflowSteps retries and succeeds after an mt predicate conflict")
+{
+    auto backend = std::make_shared<ConflictInjectingBackend>();
+    TestContext context(makeWorkflowDefinition(), {}, backend);
+    startWorkflow(context);
+
+    backend->state->onQuerySnapshot = [&]() { startWorkflow(context); };
+
+    const auto claimed = pollAndClaim(context, "worker-001", 1);
+
+    REQUIRE(backend->state->querySnapshotInjections == 1);
+    REQUIRE(claimed.size() == 1);
+    REQUIRE(claimed[0].status == StepExecutionStatus::Running);
+    REQUIRE(claimed[0].workerId == "worker-001");
+}
+
+TEST_CASE("keepAliveStep retries and succeeds after an mt execution row conflict")
+{
+    auto backend = std::make_shared<ConflictInjectingBackend>();
+    TestContext context(makeWorkflowDefinition(), {}, backend);
+    const auto execution = startWorkflow(context);
+    const auto claimed = claimStartStep(context);
+
+    REQUIRE(claimed.leaseExpiresAt.has_value());
+    const auto originalLeaseExpiresAt = claimed.leaseExpiresAt.value();
+
+    backend->state->onReadSnapshot = [&]()
+    {
+        auto conflictingExecution =
+            context.orchestrator.getWorkflowExecution(execution.workflowExecutionId).value();
+        mt::Json::Object state;
+        state["conflictingWrite"] = true;
+        conflictingExecution.state = mt::Json(std::move(state));
+        context.orchestrator.putWorkflowExecution(conflictingExecution);
+    };
+
+    const auto keptAlive = context.orchestrator.keepAliveStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001"
+    );
+
+    REQUIRE(backend->state->readSnapshotInjections == 1);
+    REQUIRE(keptAlive.status == StepExecutionStatus::Running);
+    REQUIRE(keptAlive.workerId == "worker-001");
+    REQUIRE(keptAlive.leaseExpiresAt.has_value());
+    REQUIRE(keptAlive.leaseExpiresAt.value() > originalLeaseExpiresAt);
+}
+
+TEST_CASE("failStep retries and succeeds after an mt execution row conflict")
+{
+    auto backend = std::make_shared<ConflictInjectingBackend>();
+    TestContext context(makeWorkflowDefinition(2), {}, backend);
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    backend->state->onReadSnapshot = [&]()
+    {
+        auto conflictingExecution =
+            context.orchestrator.getWorkflowExecution(execution.workflowExecutionId).value();
+        mt::Json::Object state;
+        state["conflictingWrite"] = true;
+        conflictingExecution.state = mt::Json(std::move(state));
+        context.orchestrator.putWorkflowExecution(conflictingExecution);
+    };
+
+    const auto result = context.orchestrator.failStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", "timeout"
+    );
+
+    REQUIRE(backend->state->readSnapshotInjections == 1);
+    REQUIRE(result.status == WorkflowExecutionStatus::Running);
+    REQUIRE(result.currentStepAttempt == 1);
+
+    const auto failedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(failedStep.has_value());
+    REQUIRE(failedStep->status == StepExecutionStatus::Failed);
+
+    const auto retryStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 1
+    );
+    REQUIRE(retryStep.has_value());
+    REQUIRE(retryStep->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("sweepExpiredLeases retries and succeeds after an mt predicate conflict")
+{
+    auto backend = std::make_shared<ConflictInjectingBackend>();
+    TestContext context(makeWorkflowDefinition(2), {}, backend);
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    expireLease(context, execution.workflowExecutionId, "validateOrder", 0);
+
+    backend->state->onQuerySnapshot = [&]()
+    {
+        auto conflictingStep =
+            context.orchestrator
+                .getWorkflowStepExecution(execution.workflowExecutionId, "validateOrder", 0)
+                .value();
+        mt::Json::Object state;
+        state["conflictingWrite"] = true;
+        conflictingStep.state = mt::Json(std::move(state));
+        context.orchestrator.putWorkflowStepExecution(conflictingStep);
+    };
+
+    const auto result = context.orchestrator.sweepExpiredLeases();
+
+    REQUIRE(backend->state->querySnapshotInjections == 1);
+    REQUIRE(result.retriedCount == 1);
+    REQUIRE(result.failedCount == 0);
+
+    const auto retryStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 1
+    );
+    REQUIRE(retryStep.has_value());
+    REQUIRE(retryStep->status == StepExecutionStatus::Pending);
 }
 
 TEST_CASE("failStep sets completedAt on workflow execution when retries are exhausted")
