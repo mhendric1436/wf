@@ -81,7 +81,8 @@ class WorkflowOrchestrator
         const std::string& workflowExecutionId,
         const std::string& stepName,
         const std::string& workerId,
-        const mt::Json& stepOutput
+        const mt::Json& stepOutput,
+        std::optional<std::chrono::seconds> nextStepDelay = std::nullopt
     );
 
     WorkflowExecution completeStep(
@@ -89,7 +90,8 @@ class WorkflowOrchestrator
         const std::string& workflowExecutionId,
         const std::string& stepName,
         const std::string& workerId,
-        const mt::Json& stepOutput
+        const mt::Json& stepOutput,
+        std::optional<std::chrono::seconds> nextStepDelay = std::nullopt
     );
 
     WorkflowExecution failStep(

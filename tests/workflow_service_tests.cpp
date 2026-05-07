@@ -7,6 +7,7 @@
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_service.hpp"
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -457,6 +458,39 @@ TEST_CASE("service complete advances execution to the next step")
         context.orchestrator.getWorkflowStepExecution(executionId, "chargePayment", 0);
     REQUIRE(nextStep.has_value());
     REQUIRE(nextStep->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("service complete request can delay the next step")
+{
+    TestContext context({nextStepDecision("chargePayment")});
+    context.registerValidDefinition();
+    const auto executionId = context.claimInitialStep("worker-001");
+
+    context.service.completeWorkflowStep(
+        CompleteWorkflowStepRequest{
+            .workflowExecutionId = executionId,
+            .stepName = "validateOrder",
+            .workerId = "worker-001",
+            .stepOutput = mt::Json(mt::Json::Object{}),
+            .nextStepDelay = std::chrono::seconds{60},
+        }
+    );
+
+    const auto pollResponse = context.service.pollAndClaimWorkflowSteps(
+        PollAndClaimWorkflowStepsRequest{
+            .workflowName = "orderProcessing",
+            .workflowVersion = 1,
+            .workerId = "worker-002",
+            .maxResults = 1,
+        }
+    );
+
+    const auto nextStep =
+        context.orchestrator.getWorkflowStepExecution(executionId, "chargePayment", 0);
+
+    REQUIRE(nextStep.has_value());
+    REQUIRE(nextStep->scheduledAt.has_value());
+    REQUIRE(pollResponse.steps.empty());
 }
 
 TEST_CASE("service complete marks workflow completed when logic returns complete decision")

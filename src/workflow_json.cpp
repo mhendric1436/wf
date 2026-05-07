@@ -27,6 +27,7 @@ constexpr const char* kLeaseExpiresAt = "leaseExpiresAt";
 constexpr const char* kMaxRetries = "maxRetries";
 constexpr const char* kName = "name";
 constexpr const char* kOutput = "output";
+constexpr const char* kScheduledAt = "scheduledAt";
 constexpr const char* kSingleton = "singleton";
 constexpr const char* kStartedAt = "startedAt";
 constexpr const char* kStartWorkflowStepName = "startWorkflowStepName";
@@ -420,6 +421,8 @@ mt::Json toJson(const WorkflowStepExecution& step)
         step.failureReason.has_value() ? mt::Json(step.failureReason.value()) : mt::Json{};
     obj[kCreatedAt] =
         step.createdAt.has_value() ? mt::Json(toIso8601(step.createdAt.value())) : mt::Json{};
+    obj[kScheduledAt] =
+        step.scheduledAt.has_value() ? mt::Json(toIso8601(step.scheduledAt.value())) : mt::Json{};
     obj[kStartedAt] =
         step.startedAt.has_value() ? mt::Json(toIso8601(step.startedAt.value())) : mt::Json{};
     obj[kCompletedAt] =
@@ -534,6 +537,11 @@ WorkflowStepExecution workflowStepExecutionFromJson(const mt::Json& v)
     if (v.is_object() && v.as_object().count(kCreatedAt) && !v.at(kCreatedAt).is_null())
     {
         step.createdAt = fromIso8601(v.at(kCreatedAt).as_string());
+    }
+
+    if (v.is_object() && v.as_object().count(kScheduledAt) && !v.at(kScheduledAt).is_null())
+    {
+        step.scheduledAt = fromIso8601(v.at(kScheduledAt).as_string());
     }
 
     if (v.is_object() && v.as_object().count(kStartedAt) && !v.at(kStartedAt).is_null())

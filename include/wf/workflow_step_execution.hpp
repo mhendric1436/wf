@@ -26,6 +26,7 @@ struct WorkflowStepExecution
     std::optional<std::string> failureReason;
 
     std::optional<std::chrono::system_clock::time_point> createdAt;
+    std::optional<std::chrono::system_clock::time_point> scheduledAt;
     std::optional<std::chrono::system_clock::time_point> startedAt;
     std::optional<std::chrono::system_clock::time_point> completedAt;
 

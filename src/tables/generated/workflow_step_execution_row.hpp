@@ -23,6 +23,7 @@ struct WorkflowStepExecutionRow
     std::optional<std::string> leaseExpiresAt;
     std::optional<std::string> failureReason;
     std::optional<std::string> createdAt;
+    std::optional<std::string> scheduledAt;
     std::optional<std::string> startedAt;
     std::optional<std::string> completedAt;
     mt::Json input = mt::Json::object({});
@@ -50,6 +51,7 @@ struct WorkflowStepExecutionRowMapping
     static constexpr std::string_view field_leaseExpiresAt = "leaseExpiresAt";
     static constexpr std::string_view field_failureReason = "failureReason";
     static constexpr std::string_view field_createdAt = "createdAt";
+    static constexpr std::string_view field_scheduledAt = "scheduledAt";
     static constexpr std::string_view field_startedAt = "startedAt";
     static constexpr std::string_view field_completedAt = "completedAt";
     static constexpr std::string_view field_input = "input";
@@ -86,6 +88,8 @@ struct WorkflowStepExecutionRowMapping
                 .mark_required(true),
             mt::FieldSpec::optional(std::string(field_createdAt), mt::FieldType::String)
                 .mark_required(true),
+            mt::FieldSpec::optional(std::string(field_scheduledAt), mt::FieldType::String)
+                .mark_required(true),
             mt::FieldSpec::optional(std::string(field_startedAt), mt::FieldType::String)
                 .mark_required(true),
             mt::FieldSpec::optional(std::string(field_completedAt), mt::FieldType::String)
@@ -119,6 +123,8 @@ struct WorkflowStepExecutionRowMapping
               row.failureReason ? mt::Json(*row.failureReason) : mt::Json::null()},
              {std::string(field_createdAt),
               row.createdAt ? mt::Json(*row.createdAt) : mt::Json::null()},
+             {std::string(field_scheduledAt),
+              row.scheduledAt ? mt::Json(*row.scheduledAt) : mt::Json::null()},
              {std::string(field_startedAt),
               row.startedAt ? mt::Json(*row.startedAt) : mt::Json::null()},
              {std::string(field_completedAt),
@@ -156,6 +162,10 @@ struct WorkflowStepExecutionRowMapping
                 json[std::string(field_createdAt)].is_null()
                     ? std::nullopt
                     : std::optional<std::string>(json[std::string(field_createdAt)].as_string()),
+            .scheduledAt =
+                json[std::string(field_scheduledAt)].is_null()
+                    ? std::nullopt
+                    : std::optional<std::string>(json[std::string(field_scheduledAt)].as_string()),
             .startedAt =
                 json[std::string(field_startedAt)].is_null()
                     ? std::nullopt

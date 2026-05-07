@@ -82,6 +82,7 @@ struct CompleteWorkflowStepRequest
     std::string stepName;
     std::string workerId;
     mt::Json stepOutput = mt::Json(mt::Json::Object{});
+    std::optional<std::chrono::seconds> nextStepDelay;
 };
 
 struct CompleteWorkflowStepResponse

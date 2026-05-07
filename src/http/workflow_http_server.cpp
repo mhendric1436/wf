@@ -4,6 +4,7 @@
 #include "mt/errors.hpp"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
+#include "wf/duration.hpp"
 #include "wf/workflow_json.hpp"
 
 #include <stdexcept>
@@ -435,6 +436,13 @@ struct WorkflowHttpServer::Impl
             request.stepOutput = (body.is_object() && body.as_object().count("stepOutput"))
                                      ? body["stepOutput"]
                                      : mt::Json(mt::Json::Object{});
+            request.nextStepDelay =
+                (body.is_object() && body.as_object().count("nextStepDelay") &&
+                 !body["nextStepDelay"].is_null())
+                    ? std::optional<std::chrono::seconds>{parseIso8601DurationToSeconds(
+                          body["nextStepDelay"].as_string()
+                      )}
+                    : std::nullopt;
 
             const auto response = service.completeWorkflowStep(request);
 

@@ -367,6 +367,9 @@ components:
         createdAt:
           type: ['string', 'null']
           format: date-time
+        scheduledAt:
+          type: ['string', 'null']
+          format: date-time
         startedAt:
           type: ['string', 'null']
           format: date-time
@@ -506,6 +509,10 @@ components:
           type: object
           additionalProperties: true
           default: {}
+        nextStepDelay:
+          type: ['string', 'null']
+          description: ISO-8601 duration to wait before the next step can be claimed.
+          example: PT30S
 
     FailWorkflowStepRequest:
       type: object

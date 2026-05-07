@@ -150,6 +150,7 @@ inline WorkflowStepExecutionRow toRow(const WorkflowStepExecution& stepExecution
         .leaseExpiresAt = toStorageTime(stepExecution.leaseExpiresAt),
         .failureReason = stepExecution.failureReason,
         .createdAt = toStorageTime(stepExecution.createdAt),
+        .scheduledAt = toStorageTime(stepExecution.scheduledAt),
         .startedAt = toStorageTime(stepExecution.startedAt),
         .completedAt = toStorageTime(stepExecution.completedAt),
         .input = stepExecution.input,
@@ -171,6 +172,7 @@ inline WorkflowStepExecution fromRow(const WorkflowStepExecutionRow& row)
     stepExecution.leaseExpiresAt = fromStorageTime(row.leaseExpiresAt);
     stepExecution.failureReason = row.failureReason;
     stepExecution.createdAt = fromStorageTime(row.createdAt);
+    stepExecution.scheduledAt = fromStorageTime(row.scheduledAt);
     stepExecution.startedAt = fromStorageTime(row.startedAt);
     stepExecution.completedAt = fromStorageTime(row.completedAt);
     stepExecution.input = row.input;

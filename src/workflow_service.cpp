@@ -95,7 +95,8 @@ WorkflowService::completeWorkflowStep(const CompleteWorkflowStepRequest& request
 {
     return CompleteWorkflowStepResponse{
         .execution = orchestrator_.completeStep(
-            request.workflowExecutionId, request.stepName, request.workerId, request.stepOutput
+            request.workflowExecutionId, request.stepName, request.workerId, request.stepOutput,
+            request.nextStepDelay
         ),
     };
 }

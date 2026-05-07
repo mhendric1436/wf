@@ -967,6 +967,32 @@ TEST_CASE("completeStep does not set completedAt when workflow continues to next
     REQUIRE_FALSE(result.completedAt.has_value());
 }
 
+TEST_CASE("completeStep with next step delay keeps the next pending step unclaimable")
+{
+    TestContext context(makeWorkflowDefinition(), {nextStepDecision("chargePayment")});
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    const auto before = std::chrono::system_clock::now();
+    const auto result = context.orchestrator.completeStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{}),
+        std::chrono::seconds{60}
+    );
+
+    REQUIRE(result.status == WorkflowExecutionStatus::Running);
+
+    const auto nextStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "chargePayment", 0
+    );
+    REQUIRE(nextStep.has_value());
+    REQUIRE(nextStep->status == StepExecutionStatus::Pending);
+    REQUIRE(nextStep->scheduledAt.has_value());
+    REQUIRE(nextStep->scheduledAt.value() >= before + std::chrono::seconds{60});
+
+    const auto claimed = pollAndClaim(context, "worker-002");
+    REQUIRE(claimed.empty());
+}
+
 TEST_CASE("completeStep retries and succeeds after an mt execution row conflict")
 {
     TestContext context(

@@ -276,7 +276,8 @@ WorkflowStepExecution makeStepExecution(
     const WorkflowExecution& execution,
     const std::string& stepName,
     int attempt,
-    const mt::Json& input
+    const mt::Json& input,
+    std::optional<std::chrono::system_clock::time_point> scheduledAt = std::nullopt
 )
 {
     WorkflowStepExecution stepExecution;
@@ -290,6 +291,7 @@ WorkflowStepExecution makeStepExecution(
     stepExecution.state = execution.state;
     stepExecution.output = mt::Json(mt::Json::Object{});
     stepExecution.createdAt = nowForStorage();
+    stepExecution.scheduledAt = scheduledAt;
     return stepExecution;
 }
 
@@ -300,7 +302,7 @@ bool isClaimable(
 {
     if (stepExecution.status == StepExecutionStatus::Pending)
     {
-        return true;
+        return !stepExecution.scheduledAt.has_value() || stepExecution.scheduledAt.value() <= now;
     }
 
     return stepExecution.status == StepExecutionStatus::Running &&
@@ -648,12 +650,17 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     const std::string& workflowExecutionId,
     const std::string& stepName,
     const std::string& workerId,
-    const mt::Json& stepOutput
+    const mt::Json& stepOutput,
+    std::optional<std::chrono::seconds> nextStepDelay
 )
 {
     return tables_->transactions.retry(
         [&](mt::Transaction& tx)
-        { return completeStep(tx, workflowExecutionId, stepName, workerId, stepOutput); }
+        {
+            return completeStep(
+                tx, workflowExecutionId, stepName, workerId, stepOutput, nextStepDelay
+            );
+        }
     );
 }
 
@@ -662,12 +669,18 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     const std::string& workflowExecutionId,
     const std::string& stepName,
     const std::string& workerId,
-    const mt::Json& stepOutput
+    const mt::Json& stepOutput,
+    std::optional<std::chrono::seconds> nextStepDelay
 )
 {
     validateExecutionId(workflowExecutionId);
     validateStepName(stepName);
     validateWorkerId(workerId);
+
+    if (nextStepDelay.has_value() && nextStepDelay.value() <= std::chrono::seconds{0})
+    {
+        throw std::invalid_argument("nextStepDelay must be greater than zero");
+    }
 
     auto execution = tables_->executions.get(tx, workflowExecutionId);
 
@@ -751,8 +764,17 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
     updatedExecution.currentStepName = nextStepName;
     updatedExecution.currentStepAttempt = 0;
     tables_->executions.put(tx, toRow(updatedExecution));
+
+    std::optional<std::chrono::system_clock::time_point> scheduledAt;
+    if (nextStepDelay.has_value())
+    {
+        scheduledAt = nowForStorage() + nextStepDelay.value();
+    }
+
     tables_->steps.put(
-        tx, toRow(makeStepExecution(updatedExecution, nextStepName, 0, decision.nextStepInput))
+        tx, toRow(makeStepExecution(
+                updatedExecution, nextStepName, 0, decision.nextStepInput, scheduledAt
+            ))
     );
 
     return updatedExecution;

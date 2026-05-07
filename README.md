@@ -481,6 +481,10 @@ The frontend starts and manages workflow executions. Workers perform step execut
 10. Orchestrator creates the next Pending step or completes the workflow with completedAt timestamp.
 ```
 
+`completeWorkflowStep` accepts an optional `nextStepDelay` duration. When present, the orchestrator
+creates the next step with a future `scheduledAt` timestamp, and `pollAndClaimWorkflowSteps` will not
+claim that pending step until at least that delay has elapsed.
+
 ## Poll and claim
 
 `pollAndClaimWorkflowSteps` combines polling and claiming into one operation.
@@ -616,6 +620,7 @@ input
 state
 output
 createdAt
+scheduledAt
 startedAt
 completedAt
 ```

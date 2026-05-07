@@ -108,6 +108,7 @@ TEST_CASE("workflow step execution row conversion preserves lease fields and com
 {
     const auto createdAt =
         std::chrono::system_clock::time_point{} + std::chrono::seconds{1710000100};
+    const auto scheduledAt = createdAt + std::chrono::seconds{30};
     const auto startedAt = createdAt + std::chrono::seconds{5};
     const auto leaseExpiresAt = startedAt + std::chrono::seconds{30};
     const auto completedAt = startedAt + std::chrono::seconds{10};
@@ -123,6 +124,7 @@ TEST_CASE("workflow step execution row conversion preserves lease fields and com
     step.leaseExpiresAt = leaseExpiresAt;
     step.failureReason = "validation timeout";
     step.createdAt = createdAt;
+    step.scheduledAt = scheduledAt;
     step.startedAt = startedAt;
     step.completedAt = completedAt;
     step.input = mt::Json::object({{"orderId", mt::Json("order-456")}});
@@ -137,6 +139,7 @@ TEST_CASE("workflow step execution row conversion preserves lease fields and com
     REQUIRE(row.attempt == 2);
     REQUIRE(row.workerId == "worker-007");
     REQUIRE(row.leaseExpiresAt.has_value());
+    REQUIRE(row.scheduledAt.has_value());
     REQUIRE(row.output.at("errorCode").as_string() == "timeout");
 
     const auto json = WorkflowStepExecutionRowMapping::to_json(row);
@@ -148,6 +151,7 @@ TEST_CASE("workflow step execution row conversion preserves lease fields and com
     REQUIRE(decoded.leaseExpiresAt == step.leaseExpiresAt);
     REQUIRE(decoded.failureReason == step.failureReason);
     REQUIRE(decoded.createdAt == step.createdAt);
+    REQUIRE(decoded.scheduledAt == step.scheduledAt);
     REQUIRE(decoded.startedAt == step.startedAt);
     REQUIRE(decoded.completedAt == step.completedAt);
     REQUIRE(decoded.input == step.input);

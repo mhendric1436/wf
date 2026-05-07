@@ -15,6 +15,7 @@
     {"name": "leaseExpiresAt", "type": "optional", "value_type": "string"},
     {"name": "failureReason", "type": "optional", "value_type": "string"},
     {"name": "createdAt", "type": "optional", "value_type": "string"},
+    {"name": "scheduledAt", "type": "optional", "value_type": "string"},
     {"name": "startedAt", "type": "optional", "value_type": "string"},
     {"name": "completedAt", "type": "optional", "value_type": "string"},
     {"name": "input", "type": "json", "default": {}},

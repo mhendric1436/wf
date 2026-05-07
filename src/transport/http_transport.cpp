@@ -3,8 +3,10 @@
 #include "httplib/httplib.h"
 #include "mt/json.hpp"
 #include "mt/json_parser.hpp"
+#include "wf/duration.hpp"
 #include "wf/workflow_json.hpp"
 
+#include <chrono>
 #include <stdexcept>
 #include <string>
 
@@ -13,6 +15,11 @@ namespace workflow::transport
 
 namespace
 {
+
+std::string toIso8601Duration(std::chrono::seconds value)
+{
+    return "PT" + std::to_string(value.count()) + "S";
+}
 
 void checkResponse(const httplib::Result& result)
 {
@@ -236,6 +243,10 @@ HttpTransport::completeWorkflowStep(const CompleteWorkflowStepRequest& request)
     obj["stepName"] = request.stepName;
     obj["workerId"] = request.workerId;
     obj["stepOutput"] = request.stepOutput;
+    if (request.nextStepDelay.has_value())
+    {
+        obj["nextStepDelay"] = toIso8601Duration(request.nextStepDelay.value());
+    }
 
     const auto result =
         impl_->post("/v1/workflow-step-executions/complete", mt::Json(std::move(obj)));

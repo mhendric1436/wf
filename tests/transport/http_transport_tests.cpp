@@ -10,6 +10,7 @@
 #include "wf/workflow_orchestrator.hpp"
 #include "wf/workflow_service.hpp"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
@@ -360,6 +361,32 @@ TEST_CASE("HttpTransport complete workflow step")
         );
         REQUIRE(res.execution.status == WorkflowExecutionStatus::Running);
         REQUIRE(res.execution.currentStepName == "chargePayment");
+    }
+
+    SECTION("complete with next step delay keeps next step unclaimable")
+    {
+        auto res = ctx.client.completeWorkflowStep(
+            CompleteWorkflowStepRequest{
+                .workflowExecutionId = id,
+                .stepName = "validateOrder",
+                .workerId = "worker-001",
+                .stepOutput = mt::Json(mt::Json::Object{}),
+                .nextStepDelay = std::chrono::seconds{60},
+            }
+        );
+
+        auto poll = ctx.client.pollAndClaimWorkflowSteps(
+            PollAndClaimWorkflowStepsRequest{
+                .workflowName = "orderProcessing",
+                .workflowVersion = 1,
+                .workerId = "worker-002",
+                .maxResults = 1
+            }
+        );
+
+        REQUIRE(res.execution.status == WorkflowExecutionStatus::Running);
+        REQUIRE(res.execution.currentStepName == "chargePayment");
+        REQUIRE(poll.steps.empty());
     }
 
     SECTION("complete with wrong worker throws")
