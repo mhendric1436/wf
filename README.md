@@ -931,6 +931,8 @@ make              Build and run tests, then build CLI
 make build        Build static library only
 make test         Build and run tests
 make cli          Build the wf CLI binary
+make codegen      Generate private mt row and mapping headers
+make codegen-check Verify generated mt row headers are current
 make format       Format source and header files with clang-format
 make format-check Check formatting without modifying files
 make docs-png     Generate PNG diagrams from docs/*.puml

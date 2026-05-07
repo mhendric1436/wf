@@ -4,7 +4,7 @@ MT_INCLUDE := $(HOME)/repos/mt/include
 MT_SRC_DIR := $(HOME)/repos/mt/src
 MT_CODEGEN := $(HOME)/repos/mt/tools/mt_codegen.py
 PYTHON ?= python3
-CPPFLAGS   := -Iinclude -Ithird_party -I$(MT_INCLUDE)
+CPPFLAGS   := -Iinclude -Isrc -Ithird_party -I$(MT_INCLUDE)
 
 FORMAT := clang-format
 PLANTUML ?= plantuml
@@ -35,6 +35,7 @@ GENERATED_TABLE_HEADERS := \
 	src/tables/generated/workflow_definition_row.hpp \
 	src/tables/generated/workflow_execution_row.hpp \
 	src/tables/generated/workflow_step_execution_row.hpp
+CODEGEN_CHECK_DIR := $(BUILD_DIR)/codegen-check
 MT_SQLITE_SRC := \
 	$(MT_SRC_DIR)/backends/common/schema_codec.cpp \
 	$(MT_SRC_DIR)/backends/sqlite/sqlite_backend.cpp \
@@ -59,7 +60,7 @@ FORMAT_FILES := \
 	$(TEST_SRC) \
 	$(CMD_SRC)
 
-.PHONY: all build test cli codegen format format-check docs-png clean help print-files
+.PHONY: all build test cli codegen codegen-check format format-check docs-png clean help print-files
 
 all: test cli
 
@@ -68,6 +69,18 @@ build: $(LIB)
 cli: $(WF_BIN)
 
 codegen: $(GENERATED_TABLE_HEADERS)
+
+codegen-check:
+	@mkdir -p $(CODEGEN_CHECK_DIR)
+	$(PYTHON) $(MT_CODEGEN) src/tables/schemas/workflow_definition.mt.json -o $(CODEGEN_CHECK_DIR)/workflow_definition_row.hpp
+	$(FORMAT) -i $(CODEGEN_CHECK_DIR)/workflow_definition_row.hpp
+	diff -u src/tables/generated/workflow_definition_row.hpp $(CODEGEN_CHECK_DIR)/workflow_definition_row.hpp
+	$(PYTHON) $(MT_CODEGEN) src/tables/schemas/workflow_execution.mt.json -o $(CODEGEN_CHECK_DIR)/workflow_execution_row.hpp
+	$(FORMAT) -i $(CODEGEN_CHECK_DIR)/workflow_execution_row.hpp
+	diff -u src/tables/generated/workflow_execution_row.hpp $(CODEGEN_CHECK_DIR)/workflow_execution_row.hpp
+	$(PYTHON) $(MT_CODEGEN) src/tables/schemas/workflow_step_execution.mt.json -o $(CODEGEN_CHECK_DIR)/workflow_step_execution_row.hpp
+	$(FORMAT) -i $(CODEGEN_CHECK_DIR)/workflow_step_execution_row.hpp
+	diff -u src/tables/generated/workflow_step_execution_row.hpp $(CODEGEN_CHECK_DIR)/workflow_step_execution_row.hpp
 
 src/tables/generated/workflow_definition_row.hpp: src/tables/schemas/workflow_definition.mt.json
 	$(PYTHON) $(MT_CODEGEN) $< -o $@
@@ -136,6 +149,7 @@ help:
 	@echo "  make test         Build and run tests"
 	@echo "  make cli          Build the wf CLI binary"
 	@echo "  make codegen      Generate private mt row and mapping headers"
+	@echo "  make codegen-check Verify generated mt row headers are current"
 	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
 	@echo "  make docs-png     Generate PNG diagrams from docs/*.puml"
