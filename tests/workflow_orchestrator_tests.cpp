@@ -5,6 +5,7 @@
 #include "wf/workflow_orchestrator.hpp"
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -78,6 +79,11 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
         lastContext = context;
         ++callCount;
 
+        if (onDecide)
+        {
+            onDecide(context, callCount);
+        }
+
         if (nextDecisionIndex_ >= decisions_.size())
         {
             return completeWorkflowDecision();
@@ -88,6 +94,7 @@ class ScriptedWorkflowLogic final : public WorkflowLogic
 
     int callCount = 0;
     std::optional<StepCompletionContext> lastContext;
+    std::function<void(const StepCompletionContext&, int)> onDecide;
 
   private:
     std::vector<NextStepDecision> decisions_;
@@ -664,6 +671,88 @@ TEST_CASE("completeStep does not set completedAt when workflow continues to next
     );
 
     REQUIRE_FALSE(result.completedAt.has_value());
+}
+
+TEST_CASE("completeStep retries and succeeds after an mt execution row conflict")
+{
+    TestContext context(
+        makeWorkflowDefinition(), {completeWorkflowDecision(), completeWorkflowDecision()}
+    );
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    context.logic.onDecide = [&](const StepCompletionContext& completionContext, int callCount)
+    {
+        if (callCount != 1)
+        {
+            return;
+        }
+
+        auto conflictingExecution =
+            context.orchestrator.getWorkflowExecution(completionContext.workflowExecutionId)
+                .value();
+        mt::Json::Object state;
+        state["conflictingWrite"] = true;
+        conflictingExecution.state = mt::Json(std::move(state));
+        context.orchestrator.putWorkflowExecution(conflictingExecution);
+    };
+
+    const auto result = context.orchestrator.completeStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
+    );
+
+    REQUIRE(context.logic.callCount == 2);
+    REQUIRE(result.status == WorkflowExecutionStatus::Completed);
+
+    const auto storedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
+    REQUIRE(storedExecution.has_value());
+    REQUIRE(storedExecution->status == WorkflowExecutionStatus::Completed);
+
+    const auto completedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(completedStep.has_value());
+    REQUIRE(completedStep->status == StepExecutionStatus::Completed);
+}
+
+TEST_CASE("completeStep retries and succeeds after an mt step row conflict")
+{
+    TestContext context(
+        makeWorkflowDefinition(), {completeWorkflowDecision(), completeWorkflowDecision()}
+    );
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+
+    context.logic.onDecide = [&](const StepCompletionContext& completionContext, int callCount)
+    {
+        if (callCount != 1)
+        {
+            return;
+        }
+
+        auto conflictingStep =
+            context.orchestrator
+                .getWorkflowStepExecution(
+                    completionContext.workflowExecutionId, completionContext.completedStepName, 0
+                )
+                .value();
+        context.orchestrator.putWorkflowStepExecution(conflictingStep);
+    };
+
+    const auto result = context.orchestrator.completeStep(
+        execution.workflowExecutionId, "validateOrder", "worker-001", mt::Json(mt::Json::Object{})
+    );
+
+    REQUIRE(context.logic.callCount == 2);
+    REQUIRE(result.status == WorkflowExecutionStatus::Completed);
+
+    const auto completedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(completedStep.has_value());
+    REQUIRE(completedStep->status == StepExecutionStatus::Completed);
+    REQUIRE_FALSE(completedStep->leaseExpiresAt.has_value());
 }
 
 TEST_CASE("failStep sets completedAt on workflow execution when retries are exhausted")
