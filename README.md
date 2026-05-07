@@ -33,9 +33,9 @@ The project is intentionally lightweight and dependency-minimal. Vendored third-
 - Catch2 amalgamated test runner (`third_party/catch2/`)
 - cpp-httplib single-header HTTP library v0.18.5 (`third_party/httplib/`)
 
-Non-vendored local dependency:
+Non-vendored dependency:
 
-- `mt`, expected at `$(HOME)/repos/mt` by the Makefile, provides JSON, typed tables, transactions, OCC, and memory/SQLite backends.
+- `mt` from https://github.com/mhendric1436/mt, expected at `$(HOME)/repos/mt` by the Makefile, provides JSON, typed tables, transactions, OCC, and memory/SQLite backends.
 
 ## Short description
 
@@ -779,7 +779,7 @@ Required:
 - `clang++`
 - `clang-format`
 - `make`
-- sibling `mt` checkout at `$(HOME)/repos/mt`
+- `mt` checkout from https://github.com/mhendric1436/mt at `$(HOME)/repos/mt`
 - SQLite development library for the `wf` CLI server path and mt SQLite backend
 
 Optional:
