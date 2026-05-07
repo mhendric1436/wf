@@ -352,6 +352,34 @@ workflow::WorkflowOrchestrator orchestrator(database, logic);
 workflow::WorkflowService service(orchestrator);
 ```
 
+## Shared mt transactions
+
+`WorkflowOrchestrator` also exposes overloads that accept a caller-owned `mt::Transaction&`.
+These overloads do not create, retry, commit, or abort the transaction, which lets a single binary
+coordinate wf state changes with other libraries that use the same `mt::Database`.
+
+```cpp
+mt::TransactionProvider transactions(database);
+
+auto execution = transactions.retry(
+    [&](mt::Transaction& tx)
+    {
+        auto started = orchestrator.startWorkflow(
+            tx, "orderProcessing", 1, mt::Json(mt::Json::Object{})
+        );
+
+        queue.enqueue(tx, "workflow-started", mt::Json::object({
+            {"workflowExecutionId", started.workflowExecutionId},
+        }));
+
+        return started;
+    }
+);
+```
+
+Use the non-transaction overloads for normal wf-only operations. Use the `mt::Transaction&`
+overloads when wf must participate in a larger atomic operation owned by the caller.
+
 ## Background lease sweep
 
 `WorkflowService` runs a background thread that periodically sweeps for expired step leases.

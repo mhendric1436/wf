@@ -1214,3 +1214,126 @@ TEST_CASE("independent workflow executions can be completed concurrently without
     REQUIRE(resultA.status == WorkflowExecutionStatus::Completed);
     REQUIRE(resultB.status == WorkflowExecutionStatus::Completed);
 }
+
+TEST_CASE("transaction-aware registerWorkflowDefinition commits with caller transaction")
+{
+    TestContext context(makeWorkflowDefinition());
+    mt::TransactionProvider transactions{context.database};
+
+    auto definition = makeWorkflowDefinition();
+    definition.workflowVersion = 2;
+
+    auto tx = transactions.begin();
+    context.orchestrator.registerWorkflowDefinition(tx, definition);
+    tx.commit();
+
+    const auto stored = context.orchestrator.getWorkflowDefinition("orderProcessing", 2);
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->workflowVersion == 2);
+}
+
+TEST_CASE("transaction-aware startWorkflow rolls back when caller aborts transaction")
+{
+    TestContext context;
+    mt::TransactionProvider transactions{context.database};
+
+    auto tx = transactions.begin();
+    const auto execution =
+        context.orchestrator.startWorkflow(tx, "orderProcessing", 1, mt::Json(mt::Json::Object{}));
+    tx.abort();
+
+    REQUIRE_FALSE(context.orchestrator.getWorkflowExecution(execution.workflowExecutionId));
+    REQUIRE_FALSE(context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    ));
+}
+
+TEST_CASE("transaction-aware startWorkflow commits execution and initial step")
+{
+    TestContext context;
+    mt::TransactionProvider transactions{context.database};
+
+    auto tx = transactions.begin();
+    const auto execution =
+        context.orchestrator.startWorkflow(tx, "orderProcessing", 1, mt::Json(mt::Json::Object{}));
+    tx.commit();
+
+    const auto storedExecution =
+        context.orchestrator.getWorkflowExecution(execution.workflowExecutionId);
+    REQUIRE(storedExecution.has_value());
+    REQUIRE(storedExecution->status == WorkflowExecutionStatus::Running);
+
+    const auto storedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(storedStep.has_value());
+    REQUIRE(storedStep->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("transaction-aware pollAndClaimWorkflowSteps persists claim on caller commit")
+{
+    TestContext context;
+    const auto execution = startWorkflow(context);
+    mt::TransactionProvider transactions{context.database};
+
+    auto tx = transactions.begin();
+    const auto claimed =
+        context.orchestrator.pollAndClaimWorkflowSteps(tx, "orderProcessing", 1, "worker-tx", 1);
+    tx.commit();
+
+    REQUIRE(claimed.size() == 1);
+    REQUIRE(claimed[0].workflowExecutionId == execution.workflowExecutionId);
+
+    const auto storedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(storedStep.has_value());
+    REQUIRE(storedStep->status == StepExecutionStatus::Running);
+    REQUIRE(storedStep->workerId == "worker-tx");
+}
+
+TEST_CASE("transaction-aware failStep persists retry step on caller commit")
+{
+    TestContext context(makeWorkflowDefinition(2));
+    const auto execution = startWorkflow(context);
+    claimStartStep(context);
+    mt::TransactionProvider transactions{context.database};
+
+    auto tx = transactions.begin();
+    const auto result = context.orchestrator.failStep(
+        tx, execution.workflowExecutionId, "validateOrder", "worker-001", "timeout"
+    );
+    tx.commit();
+
+    REQUIRE(result.currentStepAttempt == 1);
+
+    const auto failedStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 0
+    );
+    REQUIRE(failedStep.has_value());
+    REQUIRE(failedStep->status == StepExecutionStatus::Failed);
+
+    const auto retryStep = context.orchestrator.getWorkflowStepExecution(
+        execution.workflowExecutionId, "validateOrder", 1
+    );
+    REQUIRE(retryStep.has_value());
+    REQUIRE(retryStep->status == StepExecutionStatus::Pending);
+}
+
+TEST_CASE("transaction-aware methods do not retry caller transaction conflicts")
+{
+    TestContext context;
+    mt::TransactionProvider transactions{context.database};
+
+    auto tx = transactions.begin();
+    const auto execution =
+        context.orchestrator.startWorkflow(tx, "orderProcessing", 1, mt::Json(mt::Json::Object{}));
+
+    auto conflictingDefinition =
+        context.orchestrator.getWorkflowDefinition("orderProcessing", 1).value();
+    conflictingDefinition.expectedExecutionTime = "PT11M";
+    context.orchestrator.registerWorkflowDefinition(conflictingDefinition);
+
+    REQUIRE_THROWS_AS(tx.commit(), mt::TransactionConflict);
+    REQUIRE_FALSE(context.orchestrator.getWorkflowExecution(execution.workflowExecutionId));
+}
