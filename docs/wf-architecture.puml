@@ -13,39 +13,54 @@ package "README / Assets" {
     artifact "images/wf.png" as Logo
 }
 
-package "wf core" {
-    component "json.hpp / json.cpp\nCustom JSON Parser" as Json
-    component "duration.hpp / duration.cpp\nISO-8601 Duration Parser\nLease Duration Calculator" as Duration
-
-    component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowStep" as DefinitionModel
-    component "workflow_parser.hpp / workflow_parser.cpp\nParser + Validator" as Parser
-
-    component "workflow_execution.hpp\nWorkflowExecution (startedAt, completedAt)\nWorkflowExecutionStatus\nStepExecutionStatus" as ExecutionModel
+package "wf public API" {
+    component "workflow_definition.hpp\nWorkflowDefinition\nWorkflowDefinitionKey\nWorkflowStep" as DefinitionModel
+    component "workflow_execution.hpp\nWorkflowExecution\nWorkflowExecutionStatus\nStepExecutionStatus" as ExecutionModel
     component "workflow_step_execution.hpp\nWorkflowStepExecution\nworkerId, leaseExpiresAt\ncreatedAt, startedAt, completedAt" as StepExecutionModel
-
+    component "workflow_json.hpp / workflow_json.cpp\nDefinition validation\nDomain JSON mapping\nISO-8601 timestamp mapping" as WorkflowJson
+    component "duration.hpp / duration.cpp\nISO-8601 Duration Parser\nLease Duration Calculator" as Duration
     component "workflow_logic.hpp\nWorkflowLogic\nNextStepDecision" as Logic
-    component "workflow_orchestrator.hpp / workflow_orchestrator.cpp\nWorkflowOrchestrator\n64-stripe per-execution locking\nsweepExpiredLeases()" as Orchestrator
+    component "workflow_orchestrator.hpp / workflow_orchestrator.cpp\nWorkflowOrchestrator\nmt table coordination\nsweepExpiredLeases()" as Orchestrator
     component "workflow_service.hpp / workflow_service.cpp\nWorkflowService\nBackground sweep thread" as Service
 }
 
+package "wf clients and workers" {
+    component "workflow_client.hpp / workflow_client.cpp\nWorkflowClient" as Client
+    interface "IWorkflowTransport" as Transport
+    component "transport/in_process_transport.hpp/.cpp\nInProcessTransport" as InProcessTransport
+    component "transport/http_transport.hpp/.cpp\nHttpTransport" as HttpTransport
+    component "workflow_worker.hpp/.cpp\nWorkflowWorker" as SingleWorker
+    component "workflow_worker_pool.hpp/.cpp\nWorkflowWorkerPool\npoller threads\nexecutor threads" as WorkerPool
+}
+
+package "HTTP API" {
+    component "http/workflow_http_server.hpp/.cpp\nWorkflowHttpServer\n/v1 REST API\nProblem Details errors" as HttpServer
+    artifact "api/openapi.yaml\nOpenAPI 3.1" as OpenApi
+}
+
+package "wf private table mappings" {
+    component "src/tables/workflow_definition_mapping.hpp\nWorkflowDefinitionMapping\nkey: workflowName:version" as DefinitionMapping
+    component "src/tables/workflow_execution_mapping.hpp\nWorkflowExecutionMapping\nkey: workflowExecutionId" as ExecutionMapping
+    component "src/tables/workflow_step_execution_mapping.hpp\nWorkflowStepExecutionMapping\nkey: executionId:step:attempt\nJSON indexes" as StepMapping
+}
+
+package "mt library" {
+    component "mt::Json\nmt::JsonParser" as MtJson
+    component "mt::Database" as MtDatabase
+    component "mt::TransactionProvider\nOCC retry/commit" as Transactions
+    component "mt::Table<WorkflowDefinition, Mapping>" as DefinitionTable
+    component "mt::Table<WorkflowExecution, Mapping>" as ExecutionTable
+    component "mt::Table<WorkflowStepExecution, Mapping>" as StepTable
+    component "mt memory backend" as MtMemory
+    component "mt SQLite backend" as MtSQLite
+}
+
 package "cmd" {
-    component "cmd/main.cpp\nwf CLI binary\nvalidate | parse" as CLI
+    component "cmd/main.cpp\nwf CLI\nvalidate | parse | serve\nregister | list | start | get | cancel" as CLI
 }
 
 package "examples" {
     artifact "examples/order-processing-workflow.json" as ExampleWorkflow
-}
-
-package "store interfaces" {
-    interface "WorkflowDefinitionStore" as DefinitionStore
-    interface "WorkflowExecutionStore" as ExecutionStore
-    interface "WorkflowStepExecutionStore\npollAndClaim\nkeepAlive\ncancelByExecution\nfindExpiredRunning" as StepExecutionStore
-}
-
-package "backend/memory" {
-    component "InMemoryWorkflowDefinitionStore\nmutex-protected" as MemoryDefinitionStore
-    component "InMemoryWorkflowExecutionStore\nmutex-protected" as MemoryExecutionStore
-    component "InMemoryWorkflowStepExecutionStore\nmutex-protected\natomic pollAndClaim + keepAlive" as MemoryStepExecutionStore
 }
 
 package "tests" {
@@ -53,65 +68,94 @@ package "tests" {
     component "workflow_parser_tests.cpp" as ParserTests
     component "workflow_orchestrator_tests.cpp" as OrchestratorTests
     component "workflow_service_tests.cpp" as ServiceTests
-    component "backend/memory/\nin_memory_workflow_definition_store_tests.cpp" as DefinitionStoreTests
-    component "backend/memory/\nin_memory_workflow_execution_store_tests.cpp" as ExecutionStoreTests
-    component "backend/memory/\nin_memory_workflow_step_execution_store_tests.cpp" as StepExecutionStoreTests
-    component "backend/memory/\nin_memory_workflow_step_execution_store_lease_tests.cpp" as LeaseTests
+    component "workflow_client_tests.cpp" as ClientTests
+    component "workflow_worker_tests.cpp" as WorkerTests
+    component "workflow_worker_pool_tests.cpp" as WorkerPoolTests
+    component "http/workflow_http_server_tests.cpp" as HttpTests
+    component "transport/http_transport_tests.cpp" as TransportTests
+    component "e2e/workflow_e2e_tests.cpp" as E2ETests
 }
 
 package "docs" {
     artifact "wf-architecture.puml" as ArchitectureDoc
     artifact "wf-workflow-execution-sequence.puml" as SequenceDoc
+    artifact "wf-worker-pool-sequence.puml" as WorkerPoolDoc
 }
 
-Frontend --> Service : startWorkflowExecution\ncancelWorkflow\ngetWorkflowExecution\nlistWorkflowDefinitions
-Worker --> Service : pollAndClaimWorkflowSteps\nkeepAliveWorkflowStep\ncompleteWorkflowStep\nfailWorkflowStep
+Frontend --> Service : in-process calls
+Frontend --> Client : remote API client
+Worker --> Client : poll / keep-alive / complete / fail
+SingleWorker --> Client
+WorkerPool --> Client
 
-CLI --> Parser : validate / parse
+Client --> Transport
+InProcessTransport ..|> Transport
+HttpTransport ..|> Transport
+InProcessTransport --> Service
+HttpTransport --> HttpServer
+HttpServer --> Service
+
+CLI --> WorkflowJson : validate / parse
+CLI --> Client : remote commands
+CLI --> HttpServer : serve command
 
 Readme --> Logo : displays
-ExampleWorkflow ..> Parser : used as input
+ExampleWorkflow ..> WorkflowJson : used as input
+OpenApi ..> HttpServer
 
-Service --> Orchestrator : delegates workflow operations
-Service --> Parser : validate/register definitions
+Service --> Orchestrator : delegates workflow operations\nstarts sweep thread
+Service --> WorkflowJson : validate/register definitions
 
-Orchestrator --> DefinitionStore : load/save definitions
-Orchestrator --> ExecutionStore : save/update executions
-Orchestrator --> StepExecutionStore : create/poll-and-claim/keep-alive/update/cancel steps
+Orchestrator --> Transactions : run/retry mutations
+Orchestrator --> DefinitionTable : definitions
+Orchestrator --> ExecutionTable : executions
+Orchestrator --> StepTable : step executions
 Orchestrator --> Logic : decide next step
 Orchestrator --> Duration : calculate lease duration\nfrom step expectedExecutionTime
 
-Parser --> Json : parses JSON text
-Parser --> DefinitionModel : creates model
+DefinitionTable --> DefinitionMapping
+ExecutionTable --> ExecutionMapping
+StepTable --> StepMapping
+DefinitionMapping --> WorkflowJson
+ExecutionMapping --> WorkflowJson
+StepMapping --> WorkflowJson
 
+DefinitionTable --> MtDatabase
+ExecutionTable --> MtDatabase
+StepTable --> MtDatabase
+Transactions --> MtDatabase
+MtDatabase --> MtMemory
+MtDatabase --> MtSQLite
+
+WorkflowJson --> MtJson
+WorkflowJson --> DefinitionModel
+WorkflowJson --> ExecutionModel
+WorkflowJson --> StepExecutionModel
 Duration --> DefinitionModel : uses WorkflowStep.expectedExecutionTime
-ExecutionModel --> Json : input/state
-StepExecutionModel --> Json : input/state/output
+ExecutionModel --> MtJson : input/state
+StepExecutionModel --> MtJson : input/state/output
 StepExecutionModel --> ExecutionModel : uses StepExecutionStatus
 
-MemoryDefinitionStore ..|> DefinitionStore
-MemoryExecutionStore ..|> ExecutionStore
-MemoryStepExecutionStore ..|> StepExecutionStore
-
-MemoryDefinitionStore --> DefinitionModel
-MemoryExecutionStore --> ExecutionModel
-MemoryStepExecutionStore --> StepExecutionModel
-
 DurationTests --> Duration
-ParserTests --> Parser
+ParserTests --> WorkflowJson
 OrchestratorTests --> Orchestrator
 ServiceTests --> Service
-DefinitionStoreTests --> MemoryDefinitionStore
-ExecutionStoreTests --> MemoryExecutionStore
-StepExecutionStoreTests --> MemoryStepExecutionStore
-LeaseTests --> MemoryStepExecutionStore
+ClientTests --> Client
+WorkerTests --> SingleWorker
+WorkerPoolTests --> WorkerPool
+HttpTests --> HttpServer
+TransportTests --> HttpTransport
+E2ETests --> HttpServer
+E2ETests --> WorkerPool
 
 ArchitectureDoc ..> Service
 ArchitectureDoc ..> Orchestrator
-ArchitectureDoc ..> StepExecutionStore
-SequenceDoc ..> Service
+ArchitectureDoc ..> MtDatabase
 SequenceDoc ..> Orchestrator
-SequenceDoc ..> StepExecutionStore
+SequenceDoc ..> Transactions
+SequenceDoc ..> StepTable
+WorkerPoolDoc ..> WorkerPool
+WorkerPoolDoc ..> HttpServer
 
 note right of Duration
 Lease calculation rule:
@@ -123,29 +167,30 @@ Minimum lease duration:
 1 second
 end note
 
-note right of StepExecutionStore
-Atomic worker operation:
+note right of Transactions
+mt OCC protects workflow state:
 
-pollAndClaim(
-  workflowName,
-  workflowVersion,
-  workerId,
-  maxResults,
-  leaseDurationsByStepName
-)
+- row read validation
+- predicate read validation
+- write conflict detection
+- retry on TransactionConflict
 
-Store atomically:
-1. finds Pending matching steps
-2. reclaims expired Running steps
-3. marks steps Running
-4. assigns workerId
-5. assigns leaseExpiresAt
-6. sets startedAt
-7. returns claimed steps
+State-changing orchestrator calls
+run inside mt transactions.
+end note
 
-Sweep operations:
-- findExpiredRunning()
-- cancelByExecution(executionId)
+note right of StepTable
+WorkflowStepExecution rows support:
+
+- Pending work discovery
+- expired Running reclamation
+- worker ownership
+- lease extension
+- cancellation
+- sweep of expired leases
+
+JSON indexes include workflowName,
+workflowVersion, and status.
 end note
 
 note bottom of Service
@@ -170,23 +215,17 @@ Callers do not supply leaseDuration.
 end note
 
 note bottom of Orchestrator
-WorkflowOrchestrator owns coordination across:
-- definitions
-- workflow executions
-- step executions
-- business logic
+WorkflowOrchestrator coordinates:
+
+- definitions table
+- workflow executions table
+- step executions table
+- application-owned WorkflowLogic
 - internal lease calculation
 
-Per-execution striped locking (64 stripes):
-Independent executions proceed concurrently.
-completeStep / failStep / keepAliveStep /
-cancelWorkflow each acquire only the
-stripe for that executionId.
-
-sweepExpiredLeases():
-Acquires stripe per expired step.
-Retries or fails execution based
-on remaining maxRetries.
+No wf-owned backend stores or
+per-execution stripe locks are used.
+Concurrency is delegated to mt OCC.
 end note
 
 @enduml

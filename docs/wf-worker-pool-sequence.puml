@@ -12,7 +12,9 @@ skinparam NoteBorderColor #F9A825
 participant "PollerThread\n(one per pollerCount)" as Poller #LightBlue
 participant "SharedState\n(stateMutex + idleExecutors\n+ workQueue + CVs)" as State #LightGreen
 participant "clientMutex +\nWorkflowClient" as Client #LightCoral
-participant "HTTP Server" as Server #White
+participant "WorkflowHttpServer\n/ WorkflowService" as Server #White
+participant "WorkflowOrchestrator\nmt transactions" as Orchestrator #White
+database "mt::Database\nWorkflow tables" as Db #White
 participant "ExecutorThread\n(one per threadCount)" as Executor #Thistle
 participant "KeepAliveThread\n(one per in-flight step)" as KA #PeachPuff
 participant "StepHandler\n(user lambda)" as Handler #White
@@ -57,6 +59,10 @@ loop while !stopping
             end note
             Poller -> Client : lock(clientMutex)\npollAndClaimWorkflowSteps(\n  {def, workerId, toRequest})
             Client -> Server : HTTP POST /poll-and-claim
+            Server -> Orchestrator : pollAndClaimWorkflowSteps(...)
+            Orchestrator -> Db : mt transaction\nquery Pending/expired Running\nput claimed rows\ncommit with OCC
+            Db --> Orchestrator : committed claims\n(or retry on conflict)
+            Orchestrator --> Server : steps[0..actual]
             Server --> Client : steps[0..actual]
             Client --> Poller : unlock(clientMutex)\nreturn steps
             Poller -> State : lock(stateMutex)\nidleExecutors += (toRequest - actual)\npush steps → workQueue\nnotify queueNotEmpty CV\nnotify slotsAvailable if slots returned\nunlock
@@ -89,6 +95,10 @@ loop while !stopping or !workQueue.empty()
         loop every keepAliveInterval (on KeepAliveThread background thread)
             KA -> Client : lock(clientMutex)\nkeepAliveWorkflowStep(...)
             Client -> Server : HTTP POST /keep-alive
+            Server -> Orchestrator : keepAliveStep(...)
+            Orchestrator -> Db : mt transaction\nvalidate owner + lease\nextend leaseExpiresAt
+            Db --> Orchestrator : committed
+            Orchestrator --> Server : updated step
             Server --> Client : ok
             Client --> KA : unlock(clientMutex)
         end
@@ -125,11 +135,19 @@ loop while !stopping or !workQueue.empty()
     alt succeeded
         Executor -> Client : lock(clientMutex)\ncompleteWorkflowStep(...)
         Client -> Server : HTTP POST /complete
+        Server -> Orchestrator : completeStep(...)
+        Orchestrator -> Db : mt transaction\ncomplete step\nupdate execution\ncreate next step if needed
+        Db --> Orchestrator : committed\n(or retry on conflict)
+        Orchestrator --> Server : execution
         Server --> Client : execution
         Client --> Executor : unlock(clientMutex)
     else threw exception
         Executor -> Client : lock(clientMutex)\nfailWorkflowStep(reason)
         Client -> Server : HTTP POST /fail
+        Server -> Orchestrator : failStep(...)
+        Orchestrator -> Db : mt transaction\nfail step\nretry or fail execution
+        Db --> Orchestrator : committed\n(or retry on conflict)
+        Orchestrator --> Server : execution
         Server --> Client : execution
         Client --> Executor : unlock(clientMutex)
     end

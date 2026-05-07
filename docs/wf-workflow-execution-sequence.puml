@@ -1,7 +1,7 @@
 @startuml
 hide footbox
 
-title wf Workflow Execution Sequence
+title wf Workflow Execution Sequence with mt OCC
 
 autonumber
 
@@ -9,10 +9,12 @@ actor "Frontend API Tier" as Frontend
 actor "Backend Worker Tier" as Worker
 
 participant "WorkflowService" as Service
-participant "WorkflowOrchestrator\n(stripe lock per executionId)" as Orchestrator
-participant "WorkflowDefinitionStore" as DefStore
-participant "WorkflowExecutionStore" as ExecStore
-participant "WorkflowStepExecutionStore" as StepStore
+participant "WorkflowOrchestrator\n(mt table coordination)" as Orchestrator
+participant "mt::TransactionProvider\nretry/run" as Tx
+database "WorkflowDefinition\nmt::Table" as DefTable
+database "WorkflowExecution\nmt::Table" as ExecTable
+database "WorkflowStepExecution\nmt::Table" as StepTable
+database "mt::Database\nmemory/sqlite backend" as Db
 participant "Duration Utility" as Duration
 participant "WorkflowLogic" as Logic
 
@@ -26,18 +28,26 @@ end note
 
 Service -> Orchestrator : startWorkflow(workflowName, workflowVersion, input)
 
-Orchestrator -> DefStore : find(workflowName, workflowVersion)
-DefStore --> Orchestrator : WorkflowDefinition
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
+Tx -> DefTable : get(tx, workflowName:version)
+DefTable -> Db : read snapshot row
+Db --> DefTable : WorkflowDefinition row
+DefTable --> Tx : WorkflowDefinition
 
-Orchestrator -> Orchestrator : create WorkflowExecution\nstatus = Running\ncurrentStepName = startWorkflowStepName\ncurrentStepAttempt = 0\nstartedAt = now()
+Tx -> Tx : create WorkflowExecution\nstatus = Running\ncurrentStepName = startWorkflowStepName\ncurrentStepAttempt = 0\nstartedAt = now()
+Tx -> ExecTable : put(tx, execution)
+ExecTable -> Db : stage write
 
-Orchestrator -> ExecStore : save(execution)
-ExecStore --> Orchestrator : ok
+Tx -> Tx : create first WorkflowStepExecution\nstatus = Pending\nstepName = startWorkflowStepName\nattempt = 0\ncreatedAt = now()
+Tx -> StepTable : put(tx, stepExecution)
+StepTable -> Db : stage write
 
-Orchestrator -> Orchestrator : create first WorkflowStepExecution\nstatus = Pending\nstepName = startWorkflowStepName\nattempt = 0\ncreatedAt = now()
-
-Orchestrator -> StepStore : save(stepExecution)
-StepStore --> Orchestrator : ok
+Tx -> Db : commit\nvalidate read/write sets
+Db --> Tx : ok
+Tx --> Orchestrator : WorkflowExecution
+deactivate Tx
 
 Orchestrator --> Service : WorkflowExecution
 Service --> Frontend : StartWorkflowExecutionResponse
@@ -56,30 +66,43 @@ No leaseDuration is supplied by caller.
 end note
 
 Service -> Orchestrator : pollAndClaimWorkflowSteps(workflowName, workflowVersion, workerId, maxResults)
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
 
-Orchestrator -> DefStore : find(workflowName, workflowVersion)
-DefStore --> Orchestrator : WorkflowDefinition
+Tx -> DefTable : get(tx, workflowName:version)
+DefTable -> Db : read definition row
+Db --> DefTable : WorkflowDefinition
+DefTable --> Tx : WorkflowDefinition
 
-loop each step definition
-    Orchestrator -> Duration : calculateLeaseDuration(expectedExecutionTime)
-    Duration --> Orchestrator : leaseDuration = expectedExecutionTime / 3
+Tx -> StepTable : query(tx, Pending by workflowName/version)
+StepTable -> Db : predicate read snapshot
+Db --> StepTable : pending rows
+StepTable --> Tx : candidates
+
+Tx -> StepTable : query(tx, Running by workflowName/version)
+StepTable -> Db : predicate read snapshot
+Db --> StepTable : running rows
+StepTable --> Tx : candidates
+
+loop claim until maxResults
+    Tx -> Tx : re-read candidate by key\nconfirm Pending or expired Running
+    Tx -> Duration : calculateLeaseDuration(step.expectedExecutionTime)
+    Duration --> Tx : leaseDuration = expectedExecutionTime / 3
+    Tx -> StepTable : put(tx, claimed step)\nstatus = Running\nworkerId = workerId\nleaseExpiresAt = now + leaseDuration\nstartedAt = now
+    StepTable -> Db : stage write
 end
 
-Orchestrator -> Orchestrator : build leaseDurationsByStepName
+Tx -> Db : commit\nvalidate row + predicate reads
+alt no OCC conflict
+    Db --> Tx : ok
+    Tx --> Orchestrator : vector<WorkflowStepExecution>
+else TransactionConflict
+    Db --> Tx : conflict
+    Tx -> Tx : retry lambda
+end
+deactivate Tx
 
-Orchestrator -> StepStore : pollAndClaim(workflowName, workflowVersion,\nworkerId, maxResults, leaseDurationsByStepName)
-note right of StepStore
-Atomic backend operation:
-1. find Pending matching steps
-2. reclaim expired Running steps
-3. mark them Running
-4. assign workerId
-5. assign leaseExpiresAt
-6. set startedAt = now()
-7. return claimed steps
-end note
-
-StepStore --> Orchestrator : vector<WorkflowStepExecution>
 Orchestrator --> Service : PollAndClaimWorkflowStepsResponse
 Service --> Worker : claimed step executions
 
@@ -96,32 +119,31 @@ No leaseDuration is supplied by caller.
 end note
 
 Service -> Orchestrator : keepAliveStep(workflowExecutionId, stepName, workerId)
-note right of Orchestrator
-Acquires stripe lock for executionId.
-end note
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
+Tx -> ExecTable : get(tx, workflowExecutionId)
+ExecTable -> Db : read execution row
+Db --> ExecTable : WorkflowExecution
 
-Orchestrator -> ExecStore : find(workflowExecutionId)
-ExecStore --> Orchestrator : WorkflowExecution
+Tx -> DefTable : get(tx, workflowName:version)
+DefTable -> Db : read definition row
+Db --> DefTable : WorkflowDefinition
 
-Orchestrator -> DefStore : find(workflowName, workflowVersion)
-DefStore --> Orchestrator : WorkflowDefinition
+Tx -> StepTable : get(tx, executionId:stepName:attempt)
+StepTable -> Db : read step row
+Db --> StepTable : WorkflowStepExecution
 
-Orchestrator -> Orchestrator : find current step definition
-Orchestrator -> Duration : calculateLeaseDuration(step.expectedExecutionTime)
-Duration --> Orchestrator : leaseDuration
+Tx -> Tx : validate execution Running\nvalidate current step\nvalidate step Running\nvalidate worker owns claim\nvalidate lease not expired
+Tx -> Duration : calculateLeaseDuration(step.expectedExecutionTime)
+Duration --> Tx : leaseDuration
+Tx -> StepTable : put(tx, step)\nleaseExpiresAt = now + leaseDuration
+StepTable -> Db : stage write
+Tx -> Db : commit
+Db --> Tx : ok
+Tx --> Orchestrator : WorkflowStepExecution
+deactivate Tx
 
-Orchestrator -> StepStore : keepAlive(workflowExecutionId, stepName,\nattempt, workerId, leaseDuration)
-note right of StepStore
-Validates:
-- step exists
-- status is Running
-- workerId owns claim
-- lease has not expired
-
-Then extends leaseExpiresAt.
-end note
-
-StepStore --> Orchestrator : WorkflowStepExecution
 Orchestrator --> Service : KeepAliveWorkflowStepResponse
 Service --> Worker : updated step lease
 
@@ -139,45 +161,49 @@ Request includes:
 end note
 
 Service -> Orchestrator : completeStep(workflowExecutionId, stepName, workerId, stepOutput)
-note right of Orchestrator
-Acquires stripe lock for executionId.
-end note
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
+Tx -> ExecTable : get(tx, workflowExecutionId)
+ExecTable -> Db : read execution row
+Db --> ExecTable : WorkflowExecution
+Tx -> StepTable : get(tx, executionId:stepName:attempt)
+StepTable -> Db : read step row
+Db --> StepTable : WorkflowStepExecution
+Tx -> DefTable : get(tx, workflowName:version)
+DefTable -> Db : read definition row
+Db --> DefTable : WorkflowDefinition
 
-Orchestrator -> ExecStore : find(workflowExecutionId)
-ExecStore --> Orchestrator : WorkflowExecution
+Tx -> Tx : validate execution Running\nvalidate step Running\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future
+Tx -> Logic : decideNextStep(context)
+Logic --> Tx : NextStepDecision
 
-Orchestrator -> StepStore : find(workflowExecutionId, stepName, attempt)
-StepStore --> Orchestrator : WorkflowStepExecution
-
-Orchestrator -> DefStore : find(workflowName, workflowVersion)
-DefStore --> Orchestrator : WorkflowDefinition
-
-Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Running\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future
-
-Orchestrator -> StepStore : update(stepExecution)\nstatus = Completed\noutput = stepOutput\ncompletedAt = now()\nclear leaseExpiresAt
-StepStore --> Orchestrator : ok
-
-Orchestrator -> Logic : decideNextStep(context)
-Logic --> Orchestrator : NextStepDecision
+Tx -> StepTable : put(tx, completed step)\nstatus = Completed\noutput = stepOutput\ncompletedAt = now\nclear leaseExpiresAt
+StepTable -> Db : stage write
 
 alt workflow complete
-    Orchestrator -> Orchestrator : execution.status = Completed\nexecution.state = updatedState\nexecution.completedAt = now()
-    Orchestrator -> ExecStore : update(execution)
-    ExecStore --> Orchestrator : ok
-    Orchestrator --> Service : WorkflowExecution
-    Service --> Worker : CompleteWorkflowStepResponse
+    Tx -> ExecTable : put(tx, execution)\nstatus = Completed\nstate = updatedState\ncompletedAt = now
+    ExecTable -> Db : stage write
 else next step selected
-    Orchestrator -> Orchestrator : validate nextStepName exists\nexecution.currentStepName = nextStepName\nexecution.currentStepAttempt = 0\nexecution.state = updatedState
-
-    Orchestrator -> ExecStore : update(execution)
-    ExecStore --> Orchestrator : ok
-
-    Orchestrator -> StepStore : save(nextStepExecution)\nstatus = Pending\nstepName = nextStepName\nattempt = 0\ncreatedAt = now()
-    StepStore --> Orchestrator : ok
-
-    Orchestrator --> Service : WorkflowExecution
-    Service --> Worker : CompleteWorkflowStepResponse
+    Tx -> Tx : validate nextStepName exists\nexecution.currentStepName = nextStepName\nexecution.currentStepAttempt = 0\nexecution.state = updatedState
+    Tx -> ExecTable : put(tx, execution)
+    ExecTable -> Db : stage write
+    Tx -> StepTable : put(tx, nextStepExecution)\nstatus = Pending\nstepName = nextStepName\nattempt = 0\ncreatedAt = now
+    StepTable -> Db : stage write
 end
+
+Tx -> Db : commit\nvalidate row + predicate reads
+alt no OCC conflict
+    Db --> Tx : ok
+    Tx --> Orchestrator : WorkflowExecution
+else TransactionConflict
+    Db --> Tx : conflict
+    Tx -> Tx : retry lambda
+end
+deactivate Tx
+
+Orchestrator --> Service : WorkflowExecution
+Service --> Worker : CompleteWorkflowStepResponse
 
 == Worker fails a running step ==
 
@@ -191,47 +217,40 @@ Request includes:
 end note
 
 Service -> Orchestrator : failStep(workflowExecutionId, stepName, workerId, reason)
-note right of Orchestrator
-Acquires stripe lock for executionId.
-end note
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
+Tx -> ExecTable : get(tx, workflowExecutionId)
+ExecTable -> Db : read execution row
+Db --> ExecTable : WorkflowExecution
+Tx -> StepTable : get(tx, executionId:stepName:attempt)
+StepTable -> Db : read step row
+Db --> StepTable : WorkflowStepExecution
+Tx -> DefTable : get(tx, workflowName:version)
+DefTable -> Db : read definition row
+Db --> DefTable : WorkflowDefinition
 
-Orchestrator -> ExecStore : find(workflowExecutionId)
-ExecStore --> Orchestrator : WorkflowExecution
-
-Orchestrator -> StepStore : find(workflowExecutionId, stepName, attempt)
-StepStore --> Orchestrator : WorkflowStepExecution
-
-Orchestrator -> DefStore : find(workflowName, workflowVersion)
-DefStore --> Orchestrator : WorkflowDefinition
-
-Orchestrator -> Orchestrator : validate execution is Running\nvalidate step is Running\nvalidate workerId owns claim\nvalidate leaseExpiresAt is in future\nfind step definition
+Tx -> Tx : validate execution Running\nvalidate step Running\nvalidate worker owns claim\nvalidate lease not expired\nfind maxRetries
+Tx -> StepTable : put(tx, failed step)\nstatus = Failed\nfailureReason = reason\ncompletedAt = now\nclear leaseExpiresAt
+StepTable -> Db : stage write
 
 alt retry attempts remain
-    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\ncompletedAt = now()\nclear leaseExpiresAt
-    StepStore --> Orchestrator : ok
-
-    Orchestrator -> Orchestrator : execution.currentStepAttempt += 1
-
-    Orchestrator -> ExecStore : update(execution)
-    ExecStore --> Orchestrator : ok
-
-    Orchestrator -> StepStore : save(retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt\ncreatedAt = now()
-    StepStore --> Orchestrator : ok
-
-    Orchestrator --> Service : WorkflowExecution
-    Service --> Worker : FailWorkflowStepResponse
+    Tx -> ExecTable : put(tx, execution)\ncurrentStepAttempt += 1
+    ExecTable -> Db : stage write
+    Tx -> StepTable : put(tx, retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt\ncreatedAt = now
+    StepTable -> Db : stage write
 else max retries exceeded
-    Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = reason\ncompletedAt = now()\nclear leaseExpiresAt
-    StepStore --> Orchestrator : ok
-
-    Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = reason\nexecution.completedAt = now()
-
-    Orchestrator -> ExecStore : update(execution)
-    ExecStore --> Orchestrator : ok
-
-    Orchestrator --> Service : WorkflowExecution
-    Service --> Worker : FailWorkflowStepResponse
+    Tx -> ExecTable : put(tx, execution)\nstatus = Failed\nfailureReason = reason\ncompletedAt = now
+    ExecTable -> Db : stage write
 end
+
+Tx -> Db : commit
+Db --> Tx : ok
+Tx --> Orchestrator : WorkflowExecution
+deactivate Tx
+
+Orchestrator --> Service : WorkflowExecution
+Service --> Worker : FailWorkflowStepResponse
 
 == Frontend cancels a running workflow ==
 
@@ -242,24 +261,27 @@ Request includes:
 end note
 
 Service -> Orchestrator : cancelWorkflow(workflowExecutionId)
-note right of Orchestrator
-Acquires stripe lock for executionId.
-end note
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
+Tx -> ExecTable : get(tx, workflowExecutionId)
+ExecTable -> Db : read execution row
+Db --> ExecTable : WorkflowExecution
+Tx -> StepTable : query(tx, workflowExecutionId)
+StepTable -> Db : predicate read steps by execution
+Db --> StepTable : step rows
 
-Orchestrator -> ExecStore : find(workflowExecutionId)
-ExecStore --> Orchestrator : WorkflowExecution
-
-Orchestrator -> Orchestrator : validate execution is Running\nexecution.status = Canceled\nexecution.completedAt = now()
-
-Orchestrator -> ExecStore : update(execution)
-ExecStore --> Orchestrator : ok
-
-Orchestrator -> StepStore : cancelByExecution(workflowExecutionId)
-note right of StepStore
-Sets all Pending and Running steps
-to Canceled with completedAt = now().
-end note
-StepStore --> Orchestrator : ok
+Tx -> Tx : validate execution Running
+loop each Pending or Running step
+    Tx -> StepTable : put(tx, canceled step)\nstatus = Canceled\nclear workerId and leaseExpiresAt\ncompletedAt = now
+    StepTable -> Db : stage write
+end
+Tx -> ExecTable : put(tx, execution)\nstatus = Canceled\ncompletedAt = now
+ExecTable -> Db : stage write
+Tx -> Db : commit
+Db --> Tx : ok
+Tx --> Orchestrator : WorkflowExecution
+deactivate Tx
 
 Orchestrator --> Service : WorkflowExecution
 Service --> Frontend : CancelWorkflowResponse
@@ -273,42 +295,41 @@ Wakes immediately on shutdown.
 end note
 
 Service -> Orchestrator : sweepExpiredLeases()
+Orchestrator -> Tx : retry(lambda)
+activate Tx
+Tx -> Db : begin transaction
+Tx -> StepTable : query(tx, Running steps)
+StepTable -> Db : predicate read running rows
+Db --> StepTable : running rows
 
-Orchestrator -> StepStore : findExpiredRunning()
-note right of StepStore
-Returns all Running steps where
-leaseExpiresAt <= now().
-end note
-StepStore --> Orchestrator : vector<WorkflowStepExecution> (expired)
+loop each running step with leaseExpiresAt <= now
+    Tx -> ExecTable : get(tx, workflowExecutionId)
+    ExecTable -> Db : read execution row
+    Db --> ExecTable : WorkflowExecution
+    Tx -> Tx : skip if execution not Running\nor current step/attempt does not match
+    Tx -> DefTable : get(tx, workflowName:version)
+    DefTable -> Db : read definition row
+    Db --> DefTable : WorkflowDefinition
 
-loop each expired step
-    Orchestrator -> Orchestrator : acquire stripe lock for\nstep.workflowExecutionId
-
-    Orchestrator -> ExecStore : find(workflowExecutionId)
-    ExecStore --> Orchestrator : WorkflowExecution
-
-    Orchestrator -> Orchestrator : guard: skip if execution not Running\nor attempt does not match
-
-    Orchestrator -> DefStore : find(workflowName, workflowVersion)
-    DefStore --> Orchestrator : WorkflowDefinition
+    Tx -> StepTable : put(tx, failed step)\nstatus = Failed\nfailureReason = lease expired\nclear leaseExpiresAt\ncompletedAt = now
+    StepTable -> Db : stage write
 
     alt retry attempts remain
-        Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = lease expired\nclear leaseExpiresAt
-
-        Orchestrator -> Orchestrator : execution.currentStepAttempt += 1
-
-        Orchestrator -> ExecStore : update(execution)
-
-        Orchestrator -> StepStore : save(retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt\ncreatedAt = now()
+        Tx -> ExecTable : put(tx, execution)\ncurrentStepAttempt += 1
+        ExecTable -> Db : stage write
+        Tx -> StepTable : put(tx, retryStepExecution)\nstatus = Pending\nattempt = currentStepAttempt\ncreatedAt = now
+        StepTable -> Db : stage write
     else max retries exceeded
-        Orchestrator -> StepStore : update(stepExecution)\nstatus = Failed\nfailureReason = lease expired\nclear leaseExpiresAt
-
-        Orchestrator -> Orchestrator : execution.status = Failed\nexecution.failureReason = lease expired\nexecution.completedAt = now()
-
-        Orchestrator -> ExecStore : update(execution)
+        Tx -> ExecTable : put(tx, execution)\nstatus = Failed\nfailureReason = lease expired\ncompletedAt = now
+        ExecTable -> Db : stage write
     end
 end
 
-Orchestrator --> Service : SweepResult\n(retriedCount, failedCount)
+Tx -> Db : commit\nvalidate running-step predicate read
+Db --> Tx : ok
+Tx --> Orchestrator : SweepResult\n(retriedCount, failedCount)
+deactivate Tx
+
+Orchestrator --> Service : SweepResult
 
 @enduml
