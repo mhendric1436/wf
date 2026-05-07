@@ -1,8 +1,8 @@
 #include "wf/workflow_orchestrator.hpp"
 
-#include "tables/workflow_definition_mapping.hpp"
-#include "tables/workflow_execution_mapping.hpp"
-#include "tables/workflow_step_execution_mapping.hpp"
+#include "tables/generated/workflow_definition_row.hpp"
+#include "tables/generated/workflow_execution_row.hpp"
+#include "tables/generated/workflow_step_execution_row.hpp"
 #include "wf/duration.hpp"
 #include "wf/workflow_json.hpp"
 
@@ -22,9 +22,9 @@ namespace workflow
 namespace
 {
 
-using DefinitionTable = mt::Table<WorkflowDefinition, WorkflowDefinitionMapping>;
-using ExecutionTable = mt::Table<WorkflowExecution, WorkflowExecutionMapping>;
-using StepExecutionTable = mt::Table<WorkflowStepExecution, WorkflowStepExecutionMapping>;
+using DefinitionTable = mt::Table<WorkflowDefinitionRow, WorkflowDefinitionRowMapping>;
+using ExecutionTable = mt::Table<WorkflowExecutionRow, WorkflowExecutionRowMapping>;
+using StepExecutionTable = mt::Table<WorkflowStepExecutionRow, WorkflowStepExecutionRowMapping>;
 
 std::string definitionKey(
     const std::string& workflowName,
@@ -296,6 +296,167 @@ bool isClaimable(
            stepExecution.leaseExpiresAt.has_value() && stepExecution.leaseExpiresAt.value() <= now;
 }
 
+std::optional<std::string>
+toStorageTime(const std::optional<std::chrono::system_clock::time_point>& value)
+{
+    if (!value.has_value())
+    {
+        return std::nullopt;
+    }
+
+    return toIso8601(value.value());
+}
+
+std::optional<std::chrono::system_clock::time_point>
+fromStorageTime(const std::optional<std::string>& value)
+{
+    if (!value.has_value())
+    {
+        return std::nullopt;
+    }
+
+    return fromIso8601(value.value());
+}
+
+WorkflowDefinitionStepRow toRow(const WorkflowStep& step)
+{
+    return WorkflowDefinitionStepRow{
+        .name = step.name,
+        .expectedExecutionTime = step.expectedExecutionTime,
+        .maxRetries = step.maxRetries.has_value()
+                          ? std::optional<std::int64_t>{step.maxRetries.value()}
+                          : std::nullopt,
+        .additionalFields = mt::Json(step.additionalFields),
+    };
+}
+
+WorkflowStep fromRow(const WorkflowDefinitionStepRow& row)
+{
+    WorkflowStep step;
+    step.name = row.name;
+    step.expectedExecutionTime = row.expectedExecutionTime;
+    step.maxRetries = row.maxRetries.has_value()
+                          ? std::optional<int>{static_cast<int>(row.maxRetries.value())}
+                          : std::nullopt;
+
+    if (row.additionalFields.is_object())
+    {
+        step.additionalFields = row.additionalFields.as_object();
+    }
+
+    return step;
+}
+
+WorkflowDefinitionRow toRow(const WorkflowDefinition& definition)
+{
+    WorkflowDefinitionRow row;
+    row.workflowName = definition.workflowName;
+    row.workflowVersion = definition.workflowVersion;
+    row.startWorkflowStepName = definition.startWorkflowStepName;
+    row.expectedExecutionTime = definition.expectedExecutionTime;
+    row.steps.reserve(definition.steps.size());
+
+    for (const auto& step : definition.steps)
+    {
+        row.steps.push_back(toRow(step));
+    }
+
+    return row;
+}
+
+WorkflowDefinition fromRow(const WorkflowDefinitionRow& row)
+{
+    WorkflowDefinition definition;
+    definition.workflowName = row.workflowName;
+    definition.workflowVersion = static_cast<int>(row.workflowVersion);
+    definition.startWorkflowStepName = row.startWorkflowStepName;
+    definition.expectedExecutionTime = row.expectedExecutionTime;
+    definition.steps.reserve(row.steps.size());
+
+    for (const auto& step : row.steps)
+    {
+        definition.steps.push_back(fromRow(step));
+    }
+
+    return definition;
+}
+
+WorkflowExecutionRow toRow(const WorkflowExecution& execution)
+{
+    return WorkflowExecutionRow{
+        .workflowExecutionId = execution.workflowExecutionId,
+        .workflowName = execution.workflowName,
+        .workflowVersion = execution.workflowVersion,
+        .status = toString(execution.status),
+        .currentStepName = execution.currentStepName,
+        .input = execution.input,
+        .state = execution.state,
+        .currentStepAttempt = execution.currentStepAttempt,
+        .failureReason = execution.failureReason,
+        .startedAt = toStorageTime(execution.startedAt),
+        .completedAt = toStorageTime(execution.completedAt),
+    };
+}
+
+WorkflowExecution fromRow(const WorkflowExecutionRow& row)
+{
+    WorkflowExecution execution;
+    execution.workflowExecutionId = row.workflowExecutionId;
+    execution.workflowName = row.workflowName;
+    execution.workflowVersion = static_cast<int>(row.workflowVersion);
+    execution.status = executionStatusFromString(row.status);
+    execution.currentStepName = row.currentStepName;
+    execution.input = row.input;
+    execution.state = row.state;
+    execution.currentStepAttempt = static_cast<int>(row.currentStepAttempt);
+    execution.failureReason = row.failureReason;
+    execution.startedAt = fromStorageTime(row.startedAt);
+    execution.completedAt = fromStorageTime(row.completedAt);
+    return execution;
+}
+
+WorkflowStepExecutionRow toRow(const WorkflowStepExecution& stepExecution)
+{
+    return WorkflowStepExecutionRow{
+        .workflowExecutionId = stepExecution.workflowExecutionId,
+        .workflowName = stepExecution.workflowName,
+        .workflowVersion = stepExecution.workflowVersion,
+        .stepName = stepExecution.stepName,
+        .attempt = stepExecution.attempt,
+        .status = toString(stepExecution.status),
+        .workerId = stepExecution.workerId,
+        .leaseExpiresAt = toStorageTime(stepExecution.leaseExpiresAt),
+        .failureReason = stepExecution.failureReason,
+        .createdAt = toStorageTime(stepExecution.createdAt),
+        .startedAt = toStorageTime(stepExecution.startedAt),
+        .completedAt = toStorageTime(stepExecution.completedAt),
+        .input = stepExecution.input,
+        .state = stepExecution.state,
+        .output = stepExecution.output,
+    };
+}
+
+WorkflowStepExecution fromRow(const WorkflowStepExecutionRow& row)
+{
+    WorkflowStepExecution stepExecution;
+    stepExecution.workflowExecutionId = row.workflowExecutionId;
+    stepExecution.workflowName = row.workflowName;
+    stepExecution.workflowVersion = static_cast<int>(row.workflowVersion);
+    stepExecution.stepName = row.stepName;
+    stepExecution.attempt = static_cast<int>(row.attempt);
+    stepExecution.status = stepStatusFromString(row.status);
+    stepExecution.workerId = row.workerId;
+    stepExecution.leaseExpiresAt = fromStorageTime(row.leaseExpiresAt);
+    stepExecution.failureReason = row.failureReason;
+    stepExecution.createdAt = fromStorageTime(row.createdAt);
+    stepExecution.startedAt = fromStorageTime(row.startedAt);
+    stepExecution.completedAt = fromStorageTime(row.completedAt);
+    stepExecution.input = row.input;
+    stepExecution.state = row.state;
+    stepExecution.output = row.output;
+    return stepExecution;
+}
+
 } // namespace
 
 struct WorkflowOrchestrator::Tables
@@ -304,14 +465,14 @@ struct WorkflowOrchestrator::Tables
         : provider(database),
           transactions(database),
           definitions(provider.table<
-                      WorkflowDefinition,
-                      WorkflowDefinitionMapping>()),
+                      WorkflowDefinitionRow,
+                      WorkflowDefinitionRowMapping>()),
           executions(provider.table<
-                     WorkflowExecution,
-                     WorkflowExecutionMapping>()),
+                     WorkflowExecutionRow,
+                     WorkflowExecutionRowMapping>()),
           steps(provider.table<
-                WorkflowStepExecution,
-                WorkflowStepExecutionMapping>())
+                WorkflowStepExecutionRow,
+                WorkflowStepExecutionRowMapping>())
     {
     }
 
@@ -339,7 +500,7 @@ WorkflowOrchestrator::registerWorkflowDefinition(const WorkflowDefinition& defin
     validateWorkflowNameAndVersion(definition.workflowName, definition.workflowVersion);
 
     tables_->transactions.run([&](mt::Transaction& tx)
-                              { tables_->definitions.put(tx, definition); });
+                              { tables_->definitions.put(tx, toRow(definition)); });
 
     return definition;
 }
@@ -363,21 +524,24 @@ WorkflowExecution WorkflowOrchestrator::startWorkflow(
                 throw std::runtime_error("workflow definition not found: " + workflowName);
             }
 
+            const auto workflowDefinition = fromRow(*definition);
+
             WorkflowExecution execution;
             execution.workflowExecutionId = generateExecutionId();
             execution.workflowName = workflowName;
             execution.workflowVersion = workflowVersion;
             execution.status = WorkflowExecutionStatus::Running;
-            execution.currentStepName = definition->startWorkflowStepName;
+            execution.currentStepName = workflowDefinition.startWorkflowStepName;
             execution.input = input;
             execution.state = mt::Json(mt::Json::Object{});
             execution.currentStepAttempt = 0;
             execution.startedAt = nowForStorage();
 
-            tables_->executions.put(tx, execution);
+            tables_->executions.put(tx, toRow(execution));
             tables_->steps.put(
-                tx,
-                makeStepExecution(execution, definition->startWorkflowStepName, 0, execution.input)
+                tx, toRow(makeStepExecution(
+                        execution, workflowDefinition.startWorkflowStepName, 0, execution.input
+                    ))
             );
 
             return execution;
@@ -411,15 +575,29 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
                 throw std::runtime_error("workflow definition not found: " + workflowName);
             }
 
+            const auto workflowDefinition = fromRow(*definition);
             const auto now = nowForStorage();
-            std::vector<WorkflowStepExecution> candidates = tables_->steps.query(
+            const auto pendingRows = tables_->steps.query(
                 tx, stepQuery(workflowName, workflowVersion, StepExecutionStatus::Pending)
             );
 
-            const auto running = tables_->steps.query(
+            const auto runningRows = tables_->steps.query(
                 tx, stepQuery(workflowName, workflowVersion, StepExecutionStatus::Running)
             );
-            candidates.insert(candidates.end(), running.begin(), running.end());
+
+            std::vector<WorkflowStepExecution> candidates;
+            candidates.reserve(pendingRows.size() + runningRows.size());
+
+            for (const auto& row : pendingRows)
+            {
+                candidates.push_back(fromRow(row));
+            }
+
+            for (const auto& row : runningRows)
+            {
+                candidates.push_back(fromRow(row));
+            }
+
             std::sort(
                 candidates.begin(), candidates.end(),
                 [](const WorkflowStepExecution& lhs, const WorkflowStepExecution& rhs)
@@ -456,22 +634,30 @@ std::vector<WorkflowStepExecution> WorkflowOrchestrator::pollAndClaimWorkflowSte
                         )
                 );
 
-                if (!current.has_value() || !isClaimable(*current, now))
+                if (!current.has_value())
                 {
                     continue;
                 }
 
-                const auto& stepDefinition = findStepDefinition(*definition, current->stepName);
+                auto currentStep = fromRow(*current);
+
+                if (!isClaimable(currentStep, now))
+                {
+                    continue;
+                }
+
+                const auto& stepDefinition =
+                    findStepDefinition(workflowDefinition, currentStep.stepName);
                 const auto leaseDuration = leaseDurationForStep(stepDefinition);
 
-                current->status = StepExecutionStatus::Running;
-                current->workerId = workerId;
-                current->leaseExpiresAt = now + leaseDuration;
-                current->failureReason.reset();
-                current->startedAt = now;
+                currentStep.status = StepExecutionStatus::Running;
+                currentStep.workerId = workerId;
+                currentStep.leaseExpiresAt = now + leaseDuration;
+                currentStep.failureReason.reset();
+                currentStep.startedAt = now;
 
-                tables_->steps.put(tx, *current);
-                claimed.push_back(*current);
+                tables_->steps.put(tx, toRow(currentStep));
+                claimed.push_back(currentStep);
             }
 
             return claimed;
@@ -499,26 +685,29 @@ WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
                 throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
             }
 
-            validateExecutionIsRunning(*execution);
+            auto workflowExecution = fromRow(*execution);
+            validateExecutionIsRunning(workflowExecution);
 
-            if (execution->currentStepName != stepName)
+            if (workflowExecution.currentStepName != stepName)
             {
                 throw std::runtime_error("step does not match current workflow step: " + stepName);
             }
 
             auto definition = tables_->definitions.get(
-                tx, definitionKey(execution->workflowName, execution->workflowVersion)
+                tx, definitionKey(workflowExecution.workflowName, workflowExecution.workflowVersion)
             );
 
             if (!definition.has_value())
             {
                 throw std::runtime_error(
-                    "workflow definition not found: " + execution->workflowName
+                    "workflow definition not found: " + workflowExecution.workflowName
                 );
             }
 
             auto stepExecution = tables_->steps.get(
-                tx, stepExecutionKey(workflowExecutionId, stepName, execution->currentStepAttempt)
+                tx, stepExecutionKey(
+                        workflowExecutionId, stepName, workflowExecution.currentStepAttempt
+                    )
             );
 
             if (!stepExecution.has_value())
@@ -526,13 +715,16 @@ WorkflowStepExecution WorkflowOrchestrator::keepAliveStep(
                 throw std::runtime_error("workflow step execution not found: " + stepName);
             }
 
-            validateClaimOwnership(*stepExecution, workerId);
+            auto workflowStepExecution = fromRow(*stepExecution);
+            validateClaimOwnership(workflowStepExecution, workerId);
 
-            const auto& stepDefinition = findStepDefinition(*definition, stepName);
-            stepExecution->leaseExpiresAt = nowForStorage() + leaseDurationForStep(stepDefinition);
+            const auto workflowDefinition = fromRow(*definition);
+            const auto& stepDefinition = findStepDefinition(workflowDefinition, stepName);
+            workflowStepExecution.leaseExpiresAt =
+                nowForStorage() + leaseDurationForStep(stepDefinition);
 
-            tables_->steps.put(tx, *stepExecution);
-            return *stepExecution;
+            tables_->steps.put(tx, toRow(workflowStepExecution));
+            return workflowStepExecution;
         }
     );
 }
@@ -558,7 +750,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
                 throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
             }
 
-            WorkflowExecution updatedExecution = *execution;
+            WorkflowExecution updatedExecution = fromRow(*execution);
             validateExecutionIsRunning(updatedExecution);
 
             if (updatedExecution.currentStepName != stepName)
@@ -576,7 +768,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
                 throw std::runtime_error("workflow step execution not found: " + stepName);
             }
 
-            WorkflowStepExecution updatedStepExecution = *stepExecution;
+            WorkflowStepExecution updatedStepExecution = fromRow(*stepExecution);
             validateClaimOwnership(updatedStepExecution, workerId);
 
             const auto definition = tables_->definitions.get(
@@ -605,7 +797,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
             updatedStepExecution.output = stepOutput;
             updatedStepExecution.leaseExpiresAt.reset();
             updatedStepExecution.completedAt = nowForStorage();
-            tables_->steps.put(tx, updatedStepExecution);
+            tables_->steps.put(tx, toRow(updatedStepExecution));
 
             updatedExecution.state = decision.updatedState;
 
@@ -613,7 +805,7 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
             {
                 updatedExecution.status = WorkflowExecutionStatus::Completed;
                 updatedExecution.completedAt = nowForStorage();
-                tables_->executions.put(tx, updatedExecution);
+                tables_->executions.put(tx, toRow(updatedExecution));
                 return updatedExecution;
             }
 
@@ -626,16 +818,19 @@ WorkflowExecution WorkflowOrchestrator::completeStep(
 
             const auto nextStepName = decision.nextStepName.value();
 
-            if (!stepDefinitionExists(*definition, nextStepName))
+            const auto workflowDefinition = fromRow(*definition);
+
+            if (!stepDefinitionExists(workflowDefinition, nextStepName))
             {
                 throw std::runtime_error("next step is not defined: " + nextStepName);
             }
 
             updatedExecution.currentStepName = nextStepName;
             updatedExecution.currentStepAttempt = 0;
-            tables_->executions.put(tx, updatedExecution);
+            tables_->executions.put(tx, toRow(updatedExecution));
             tables_->steps.put(
-                tx, makeStepExecution(updatedExecution, nextStepName, 0, decision.nextStepInput)
+                tx,
+                toRow(makeStepExecution(updatedExecution, nextStepName, 0, decision.nextStepInput))
             );
 
             return updatedExecution;
@@ -664,7 +859,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
                 throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
             }
 
-            WorkflowExecution updatedExecution = *execution;
+            WorkflowExecution updatedExecution = fromRow(*execution);
             validateExecutionIsRunning(updatedExecution);
 
             if (updatedExecution.currentStepName != stepName)
@@ -682,7 +877,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
                 throw std::runtime_error("workflow step execution not found: " + stepName);
             }
 
-            WorkflowStepExecution updatedStepExecution = *stepExecution;
+            WorkflowStepExecution updatedStepExecution = fromRow(*stepExecution);
             validateClaimOwnership(updatedStepExecution, workerId);
 
             const auto definition = tables_->definitions.get(
@@ -696,24 +891,25 @@ WorkflowExecution WorkflowOrchestrator::failStep(
                 );
             }
 
-            const auto& stepDefinition = findStepDefinition(*definition, stepName);
+            const auto workflowDefinition = fromRow(*definition);
+            const auto& stepDefinition = findStepDefinition(workflowDefinition, stepName);
             const int maxRetries = maxRetriesForStep(stepDefinition);
 
             updatedStepExecution.status = StepExecutionStatus::Failed;
             updatedStepExecution.failureReason = reason;
             updatedStepExecution.leaseExpiresAt.reset();
             updatedStepExecution.completedAt = nowForStorage();
-            tables_->steps.put(tx, updatedStepExecution);
+            tables_->steps.put(tx, toRow(updatedStepExecution));
 
             if (updatedExecution.currentStepAttempt < maxRetries)
             {
                 ++updatedExecution.currentStepAttempt;
-                tables_->executions.put(tx, updatedExecution);
+                tables_->executions.put(tx, toRow(updatedExecution));
                 tables_->steps.put(
-                    tx, makeStepExecution(
+                    tx, toRow(makeStepExecution(
                             updatedExecution, stepName, updatedExecution.currentStepAttempt,
                             updatedStepExecution.input
-                        )
+                        ))
                 );
 
                 return updatedExecution;
@@ -722,7 +918,7 @@ WorkflowExecution WorkflowOrchestrator::failStep(
             updatedExecution.status = WorkflowExecutionStatus::Failed;
             updatedExecution.failureReason = reason;
             updatedExecution.completedAt = nowForStorage();
-            tables_->executions.put(tx, updatedExecution);
+            tables_->executions.put(tx, toRow(updatedExecution));
 
             return updatedExecution;
         }
@@ -743,7 +939,9 @@ WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workfl
                 throw std::runtime_error("workflow execution not found: " + workflowExecutionId);
             }
 
-            if (execution->status != WorkflowExecutionStatus::Running)
+            auto workflowExecution = fromRow(*execution);
+
+            if (workflowExecution.status != WorkflowExecutionStatus::Running)
             {
                 throw std::runtime_error(
                     "workflow execution is not running: " + workflowExecutionId
@@ -751,10 +949,13 @@ WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workfl
             }
 
             const auto now = nowForStorage();
-            auto steps = tables_->steps.query(tx, stepsByExecutionQuery(workflowExecutionId));
+            const auto stepRows =
+                tables_->steps.query(tx, stepsByExecutionQuery(workflowExecutionId));
 
-            for (auto& step : steps)
+            for (const auto& stepRow : stepRows)
             {
+                auto step = fromRow(stepRow);
+
                 if (step.status == StepExecutionStatus::Pending ||
                     step.status == StepExecutionStatus::Running)
                 {
@@ -762,14 +963,14 @@ WorkflowExecution WorkflowOrchestrator::cancelWorkflow(const std::string& workfl
                     step.workerId.reset();
                     step.leaseExpiresAt.reset();
                     step.completedAt = now;
-                    tables_->steps.put(tx, step);
+                    tables_->steps.put(tx, toRow(step));
                 }
             }
 
-            WorkflowExecution canceled = *execution;
+            WorkflowExecution canceled = workflowExecution;
             canceled.status = WorkflowExecutionStatus::Canceled;
             canceled.completedAt = now;
-            tables_->executions.put(tx, canceled);
+            tables_->executions.put(tx, toRow(canceled));
 
             return canceled;
         }
@@ -783,10 +984,12 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
         {
             SweepResult sweepResult;
             const auto now = nowForStorage();
-            auto runningSteps = tables_->steps.query(tx, expiredRunningStepsQuery());
+            const auto runningSteps = tables_->steps.query(tx, expiredRunningStepsQuery());
 
-            for (const auto& expiredStep : runningSteps)
+            for (const auto& expiredStepRow : runningSteps)
             {
+                const auto expiredStep = fromRow(expiredStepRow);
+
                 if (!expiredStep.leaseExpiresAt.has_value() ||
                     expiredStep.leaseExpiresAt.value() > now)
                 {
@@ -795,19 +998,27 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
 
                 const auto execution = tables_->executions.get(tx, expiredStep.workflowExecutionId);
 
-                if (!execution.has_value() || execution->status != WorkflowExecutionStatus::Running)
+                if (!execution.has_value())
                 {
                     continue;
                 }
 
-                if (execution->currentStepName != expiredStep.stepName ||
-                    execution->currentStepAttempt != expiredStep.attempt)
+                const auto workflowExecution = fromRow(*execution);
+
+                if (workflowExecution.status != WorkflowExecutionStatus::Running)
+                {
+                    continue;
+                }
+
+                if (workflowExecution.currentStepName != expiredStep.stepName ||
+                    workflowExecution.currentStepAttempt != expiredStep.attempt)
                 {
                     continue;
                 }
 
                 const auto definition = tables_->definitions.get(
-                    tx, definitionKey(execution->workflowName, execution->workflowVersion)
+                    tx,
+                    definitionKey(workflowExecution.workflowName, workflowExecution.workflowVersion)
                 );
 
                 if (!definition.has_value())
@@ -815,7 +1026,9 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
                     continue;
                 }
 
-                const auto& stepDefinition = findStepDefinition(*definition, expiredStep.stepName);
+                const auto workflowDefinition = fromRow(*definition);
+                const auto& stepDefinition =
+                    findStepDefinition(workflowDefinition, expiredStep.stepName);
                 const int maxRetries = maxRetriesForStep(stepDefinition);
 
                 WorkflowStepExecution failedStep = expiredStep;
@@ -823,19 +1036,19 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
                 failedStep.failureReason = "lease expired";
                 failedStep.leaseExpiresAt.reset();
                 failedStep.completedAt = now;
-                tables_->steps.put(tx, failedStep);
+                tables_->steps.put(tx, toRow(failedStep));
 
-                WorkflowExecution updatedExecution = *execution;
+                WorkflowExecution updatedExecution = workflowExecution;
 
                 if (updatedExecution.currentStepAttempt < maxRetries)
                 {
                     ++updatedExecution.currentStepAttempt;
-                    tables_->executions.put(tx, updatedExecution);
+                    tables_->executions.put(tx, toRow(updatedExecution));
                     tables_->steps.put(
-                        tx, makeStepExecution(
+                        tx, toRow(makeStepExecution(
                                 updatedExecution, expiredStep.stepName,
                                 updatedExecution.currentStepAttempt, expiredStep.input
-                            )
+                            ))
                     );
                     ++sweepResult.retriedCount;
                 }
@@ -844,7 +1057,7 @@ SweepResult WorkflowOrchestrator::sweepExpiredLeases()
                     updatedExecution.status = WorkflowExecutionStatus::Failed;
                     updatedExecution.failureReason = "lease expired";
                     updatedExecution.completedAt = now;
-                    tables_->executions.put(tx, updatedExecution);
+                    tables_->executions.put(tx, toRow(updatedExecution));
                     ++sweepResult.failedCount;
                 }
             }
@@ -858,14 +1071,20 @@ std::optional<WorkflowExecution>
 WorkflowOrchestrator::getWorkflowExecution(const std::string& workflowExecutionId) const
 {
     validateExecutionId(workflowExecutionId);
-    return tables_->executions.get(workflowExecutionId);
+    const auto row = tables_->executions.get(workflowExecutionId);
+    if (!row.has_value())
+    {
+        return std::nullopt;
+    }
+    return fromRow(*row);
 }
 
 WorkflowExecution WorkflowOrchestrator::putWorkflowExecution(const WorkflowExecution& execution)
 {
     validateExecutionId(execution.workflowExecutionId);
 
-    tables_->transactions.run([&](mt::Transaction& tx) { tables_->executions.put(tx, execution); });
+    tables_->transactions.run([&](mt::Transaction& tx)
+                              { tables_->executions.put(tx, toRow(execution)); });
     return execution;
 }
 
@@ -883,7 +1102,12 @@ std::optional<WorkflowStepExecution> WorkflowOrchestrator::getWorkflowStepExecut
         throw std::invalid_argument("attempt must be greater than or equal to 0");
     }
 
-    return tables_->steps.get(stepExecutionKey(workflowExecutionId, stepName, attempt));
+    const auto row = tables_->steps.get(stepExecutionKey(workflowExecutionId, stepName, attempt));
+    if (!row.has_value())
+    {
+        return std::nullopt;
+    }
+    return fromRow(*row);
 }
 
 WorkflowStepExecution
@@ -897,7 +1121,8 @@ WorkflowOrchestrator::putWorkflowStepExecution(const WorkflowStepExecution& step
         throw std::invalid_argument("attempt must be greater than or equal to 0");
     }
 
-    tables_->transactions.run([&](mt::Transaction& tx) { tables_->steps.put(tx, stepExecution); });
+    tables_->transactions.run([&](mt::Transaction& tx)
+                              { tables_->steps.put(tx, toRow(stepExecution)); });
     return stepExecution;
 }
 
@@ -913,7 +1138,7 @@ std::vector<WorkflowDefinitionKey> WorkflowOrchestrator::listWorkflowDefinitions
         keys.push_back(
             WorkflowDefinitionKey{
                 .workflowName = definition.workflowName,
-                .workflowVersion = definition.workflowVersion,
+                .workflowVersion = static_cast<int>(definition.workflowVersion),
             }
         );
     }
@@ -927,7 +1152,12 @@ std::optional<WorkflowDefinition> WorkflowOrchestrator::getWorkflowDefinition(
 ) const
 {
     validateWorkflowNameAndVersion(workflowName, workflowVersion);
-    return tables_->definitions.get(definitionKey(workflowName, workflowVersion));
+    const auto row = tables_->definitions.get(definitionKey(workflowName, workflowVersion));
+    if (!row.has_value())
+    {
+        return std::nullopt;
+    }
+    return fromRow(*row);
 }
 
 } // namespace workflow

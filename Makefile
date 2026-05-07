@@ -2,6 +2,8 @@ CXX := clang++
 CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -Werror -O2 -g
 MT_INCLUDE := $(HOME)/repos/mt/include
 MT_SRC_DIR := $(HOME)/repos/mt/src
+MT_CODEGEN := $(HOME)/repos/mt/tools/mt_codegen.py
+PYTHON ?= python3
 CPPFLAGS   := -Iinclude -Ithird_party -I$(MT_INCLUDE)
 
 FORMAT := clang-format
@@ -28,6 +30,11 @@ TEST_SRC := $(shell find tests -name '*.cpp' | sort)
 CMD_SRC := $(shell find cmd -name '*.cpp' | sort)
 HEADER_FILES := $(shell find include -name '*.hpp' | sort)
 PRIVATE_HEADER_FILES := $(shell find src/tables -name '*.hpp' | sort)
+TABLE_SCHEMA_FILES := $(shell find src/tables/schemas -name '*.mt.json' | sort)
+GENERATED_TABLE_HEADERS := \
+	src/tables/generated/workflow_definition_row.hpp \
+	src/tables/generated/workflow_execution_row.hpp \
+	src/tables/generated/workflow_step_execution_row.hpp
 MT_SQLITE_SRC := \
 	$(MT_SRC_DIR)/backends/common/schema_codec.cpp \
 	$(MT_SRC_DIR)/backends/sqlite/sqlite_backend.cpp \
@@ -52,7 +59,7 @@ FORMAT_FILES := \
 	$(TEST_SRC) \
 	$(CMD_SRC)
 
-.PHONY: all build test cli format format-check docs-png clean help print-files
+.PHONY: all build test cli codegen format format-check docs-png clean help print-files
 
 all: test cli
 
@@ -60,7 +67,21 @@ build: $(LIB)
 
 cli: $(WF_BIN)
 
-$(LIB): format $(OBJ)
+codegen: $(GENERATED_TABLE_HEADERS)
+
+src/tables/generated/workflow_definition_row.hpp: src/tables/schemas/workflow_definition.mt.json
+	$(PYTHON) $(MT_CODEGEN) $< -o $@
+	$(FORMAT) -i $@
+
+src/tables/generated/workflow_execution_row.hpp: src/tables/schemas/workflow_execution.mt.json
+	$(PYTHON) $(MT_CODEGEN) $< -o $@
+	$(FORMAT) -i $@
+
+src/tables/generated/workflow_step_execution_row.hpp: src/tables/schemas/workflow_step_execution.mt.json
+	$(PYTHON) $(MT_CODEGEN) $< -o $@
+	$(FORMAT) -i $@
+
+$(LIB): codegen format $(OBJ)
 	@mkdir -p $(dir $@)
 	rm -f $@
 	ar rcs $@ $(OBJ)
@@ -114,6 +135,7 @@ help:
 	@echo "  make build        Build static library only"
 	@echo "  make test         Build and run tests"
 	@echo "  make cli          Build the wf CLI binary"
+	@echo "  make codegen      Generate private mt row and mapping headers"
 	@echo "  make format       Format source and header files with clang-format"
 	@echo "  make format-check Check formatting without modifying files"
 	@echo "  make docs-png     Generate PNG diagrams from docs/*.puml"

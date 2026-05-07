@@ -38,10 +38,10 @@ package "HTTP API" {
     artifact "api/openapi.yaml\nOpenAPI 3.1" as OpenApi
 }
 
-package "wf private table mappings" {
-    component "src/tables/workflow_definition_mapping.hpp\nWorkflowDefinitionMapping\nkey: workflowName:version" as DefinitionMapping
-    component "src/tables/workflow_execution_mapping.hpp\nWorkflowExecutionMapping\nkey: workflowExecutionId" as ExecutionMapping
-    component "src/tables/workflow_step_execution_mapping.hpp\nWorkflowStepExecutionMapping\nkey: executionId:step:attempt\nJSON indexes" as StepMapping
+package "wf private generated table rows" {
+    component "src/tables/generated/workflow_definition_row.hpp\nWorkflowDefinitionRowMapping\nkey: workflowName:version" as DefinitionMapping
+    component "src/tables/generated/workflow_execution_row.hpp\nWorkflowExecutionRowMapping\nkey: workflowExecutionId" as ExecutionMapping
+    component "src/tables/generated/workflow_step_execution_row.hpp\nWorkflowStepExecutionRowMapping\nkey: executionId:step:attempt\nJSON indexes" as StepMapping
 }
 
 package "mt library" {

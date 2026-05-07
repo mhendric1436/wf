@@ -92,9 +92,14 @@ wf/
 │   ├── logic/
 │   │   └── step_output_routing_logic.cpp
 │   ├── tables/
-│   │   ├── workflow_definition_mapping.hpp
-│   │   ├── workflow_execution_mapping.hpp
-│   │   └── workflow_step_execution_mapping.hpp
+│   │   ├── generated/
+│   │   │   ├── workflow_definition_row.hpp
+│   │   │   ├── workflow_execution_row.hpp
+│   │   │   └── workflow_step_execution_row.hpp
+│   │   └── schemas/
+│   │       ├── workflow_definition.mt.json
+│   │       ├── workflow_execution.mt.json
+│   │       └── workflow_step_execution.mt.json
 │   └── transport/
 │       ├── http_transport.cpp
 │       └── in_process_transport.cpp
@@ -307,9 +312,9 @@ WorkflowService
 └── WorkflowOrchestrator
     ├── mt::Database
     ├── mt::TransactionProvider
-    ├── mt::Table<WorkflowDefinition, WorkflowDefinitionMapping>
-    ├── mt::Table<WorkflowExecution, WorkflowExecutionMapping>
-    ├── mt::Table<WorkflowStepExecution, WorkflowStepExecutionMapping>
+    ├── mt::Table<WorkflowDefinitionRow, WorkflowDefinitionRowMapping>
+    ├── mt::Table<WorkflowExecutionRow, WorkflowExecutionRowMapping>
+    ├── mt::Table<WorkflowStepExecutionRow, WorkflowStepExecutionRowMapping>
     └── WorkflowLogic
 ```
 
@@ -577,15 +582,14 @@ Canceled
 
 ## mt tables and persistence
 
-Workflow state is stored as typed `mt::Table` rows. The private row mappings live under:
+Workflow state is stored as typed `mt::Table` rows. The private row schemas and generated mappings live under:
 
 ```text
-src/tables/workflow_definition_mapping.hpp
-src/tables/workflow_execution_mapping.hpp
-src/tables/workflow_step_execution_mapping.hpp
+src/tables/schemas/*.mt.json
+src/tables/generated/*_row.hpp
 ```
 
-The mappings define table names, row keys, JSON serialization, and JSON indexes used by `mt` backends. The logical tables are:
+The generated mappings define table names, row keys, JSON serialization, and JSON indexes used by `mt` backends. The logical tables are:
 
 ```text
 workflow_definitions
@@ -852,6 +856,7 @@ The Makefile discovers files automatically:
 ```text
 src/**/*.cpp
 src/tables/**/*.hpp
+src/tables/schemas/*.mt.json
 tests/**/*.cpp
 cmd/**/*.cpp
 include/**/*.hpp

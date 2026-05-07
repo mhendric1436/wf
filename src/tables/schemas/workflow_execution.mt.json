@@ -1,0 +1,20 @@
+{
+  "namespace": "workflow",
+  "table_name": "workflow_executions",
+  "class_name": "WorkflowExecutionRow",
+  "key": "workflowExecutionId",
+  "schema_version": 1,
+  "fields": [
+    {"name": "workflowExecutionId", "type": "string", "required": true},
+    {"name": "workflowName", "type": "string", "required": true},
+    {"name": "workflowVersion", "type": "int64", "required": true},
+    {"name": "status", "type": "string", "required": true},
+    {"name": "currentStepName", "type": "string", "required": true},
+    {"name": "input", "type": "json", "default": {}},
+    {"name": "state", "type": "json", "default": {}},
+    {"name": "currentStepAttempt", "type": "int64", "default": 0},
+    {"name": "failureReason", "type": "optional", "value_type": "string"},
+    {"name": "startedAt", "type": "optional", "value_type": "string"},
+    {"name": "completedAt", "type": "optional", "value_type": "string"}
+  ]
+}

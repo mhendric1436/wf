@@ -1,0 +1,25 @@
+{
+  "namespace": "workflow",
+  "table_name": "workflow_definitions",
+  "class_name": "WorkflowDefinitionRow",
+  "key": {"fields": ["workflowName", "workflowVersion"], "separator": ":"},
+  "schema_version": 1,
+  "fields": [
+    {"name": "workflowName", "type": "string", "required": true},
+    {"name": "workflowVersion", "type": "int64", "required": true},
+    {"name": "startWorkflowStepName", "type": "string", "required": true},
+    {"name": "expectedExecutionTime", "type": "string", "required": true},
+    {
+      "name": "steps",
+      "type": "array",
+      "value_type": "object",
+      "class_name": "WorkflowDefinitionStepRow",
+      "fields": [
+        {"name": "name", "type": "string", "required": true},
+        {"name": "expectedExecutionTime", "type": "optional", "value_type": "string"},
+        {"name": "maxRetries", "type": "optional", "value_type": "int64"},
+        {"name": "additionalFields", "type": "json", "default": {}}
+      ]
+    }
+  ]
+}

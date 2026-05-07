@@ -1,0 +1,29 @@
+{
+  "namespace": "workflow",
+  "table_name": "workflow_step_executions",
+  "class_name": "WorkflowStepExecutionRow",
+  "key": {"fields": ["workflowExecutionId", "stepName", "attempt"], "separator": ":"},
+  "schema_version": 1,
+  "fields": [
+    {"name": "workflowExecutionId", "type": "string", "required": true},
+    {"name": "workflowName", "type": "string", "required": true},
+    {"name": "workflowVersion", "type": "int64", "required": true},
+    {"name": "stepName", "type": "string", "required": true},
+    {"name": "attempt", "type": "int64", "required": true},
+    {"name": "status", "type": "string", "required": true},
+    {"name": "workerId", "type": "optional", "value_type": "string"},
+    {"name": "leaseExpiresAt", "type": "optional", "value_type": "string"},
+    {"name": "failureReason", "type": "optional", "value_type": "string"},
+    {"name": "createdAt", "type": "optional", "value_type": "string"},
+    {"name": "startedAt", "type": "optional", "value_type": "string"},
+    {"name": "completedAt", "type": "optional", "value_type": "string"},
+    {"name": "input", "type": "json", "default": {}},
+    {"name": "state", "type": "json", "default": {}},
+    {"name": "output", "type": "json", "default": {}}
+  ],
+  "indexes": [
+    {"name": "idx_step_workflow_name", "path": "$.workflowName"},
+    {"name": "idx_step_workflow_version", "path": "$.workflowVersion"},
+    {"name": "idx_step_status", "path": "$.status"}
+  ]
+}
