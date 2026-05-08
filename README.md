@@ -41,6 +41,27 @@ Non-vendored dependency:
 
 C++20 workflow framework with workflow definition validation, `mt` table-backed storage, OCC-based orchestration, HTTP transport, and worker-oriented step execution.
 
+## Trust domain
+
+`wf` is currently targeted at a single administrative trust domain. The intended callers
+are cooperating workflow authors, workers, operators, CLIs, and control-plane services
+that already belong to the same deployment or internal platform boundary.
+
+That means:
+
+- workflow names and versions are coordination identifiers, not security boundaries
+- workflow definitions are trusted application configuration
+- worker IDs, cancellation requests, and step outputs are caller-provided trusted data
+- HTTP and CLI access are operational conveniences for internal services and operators,
+  not a complete public multi-tenant workflow platform
+
+For a true multi-tenant deployment, a service built on `wf` should add tenant identity,
+authorization, workflow ownership checks, payload and definition size limits, per-tenant
+execution quotas, request auditing, and policy around who can register, start, cancel,
+poll, claim, complete, or fail workflow steps. In that model, the core workflow
+orchestration should remain backend-neutral while the outer service layer enforces tenant
+isolation and policy.
+
 ## Repository layout
 
 ```text
